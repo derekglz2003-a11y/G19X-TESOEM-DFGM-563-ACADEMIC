@@ -1,0 +1,21 @@
+# Entornos virtuales (Veo que están en la raíz)
+bin/
+Include/
+lib/
+venv/
+pyvenv.cfg
+
+# Base de datos local (¡Súper importante no subirla!)
+motor_cv
+*.db
+*.sqlite3
+
+# Archivos cacheados de Python
+__pycache__/
+*.pyc
+
+# Scripts innecesarios para el repositorio
+get-pip.py
+
+# Archivos PDF temporales
+*.pdf
