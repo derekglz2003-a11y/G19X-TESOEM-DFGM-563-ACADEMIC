@@ -1,0 +1,14 @@
+﻿streamlit
+requests
+fastapi
+uvicorn[standard]
+sqlalchemy
+python-dotenv
+python-multipart
+pydantic
+google-generativeai
+pypdf
+python-docx
+Pillow
+pytesseract
+psycopg2-binary
