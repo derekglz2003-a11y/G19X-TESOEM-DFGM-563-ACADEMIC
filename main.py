@@ -3,6 +3,8 @@ from sqlalchemy.orm import Session
 from typing import List, Optional
 from pydantic import BaseModel
 import database
+from embeddings import calcular_similitud_semantica_lote
+from parser import generar_resumen_y_fit
 import io
 import re
 import json
@@ -14,7 +16,7 @@ load_dotenv()
 database.Base.metadata.create_all(bind=database.engine)
 
 # --- ACTUALIZADO A CURRICULAI ---
-app = FastAPI(title="CurriculAi API - Optimizador de Filtrado Curricular mediante inteligencia artificial", version="2.0.0")
+app = FastAPI(title="CurriculAi API - Optimizador de Filtrado Curricular", version="2.0.0")
 
 # --- ESQUEMAS PYDANTIC ---
 class VacanteResponse(BaseModel):
@@ -25,8 +27,14 @@ class VacanteResponse(BaseModel):
     class Config:
         from_attributes = True
 
+class VacanteUpdate(BaseModel):
+    titulo: str
+    descripcion: str
+
 class GenerarDescripcionRequest(BaseModel):
     titulo: str
+    contexto: str = ""
+    descripcion: str = ""
 
 class EntrevistaCreate(BaseModel):
     candidato_id: int
@@ -261,13 +269,17 @@ async def cargar_cvs_al_pool(files: List[UploadFile] = File(...), db: Session = 
 @app.delete("/api/v1/limpiar-pool")
 def limpiar_todos_los_candidatos(db: Session = Depends(database.get_db)):
     try:
-        db.query(database.Evaluacion).delete()
-        db.query(database.Candidato).delete()
+        db.query(database.MensajeWhatsApp).filter(
+            database.MensajeWhatsApp.candidato_id.isnot(None)
+        ).update({"candidato_id": None}, synchronize_session=False)
+        for candidato in db.query(database.Candidato).all():
+            db.delete(candidato)
         db.commit()
-        return {"mensaje": "Base de datos reseteada. Todos los CVs han sido eliminados exitosamente."}
-    except Exception as e:
+        return {"mensaje": "Pool eliminado; se conservaron las bitácoras de WhatsApp sin vinculación"}
+    except Exception:
         db.rollback()
-        raise HTTPException(status_code=500, detail=f"Error al limpiar la BD: {str(e)}")
+        raise HTTPException(status_code=500, detail="No se pudo limpiar el pool")
+
 
 @app.get("/api/v1/candidatos")
 def listar_candidatos_pool(db: Session = Depends(database.get_db)):
@@ -285,16 +297,75 @@ def listar_candidatos_pool(db: Session = Depends(database.get_db)):
             "desempeno": c.desempeno,
             "experiencia": c.experiencia,
             "skills": c.skills,
-            "puntos_fuertes": c.puntos_fuertes
+            "puntos_fuertes": c.puntos_fuertes,
+            "texto_completo": c.texto_completo
         }
         for c in candidatos
     ]
 
+
+@app.delete("/api/v1/candidatos/{candidato_id}")
+def eliminar_candidato(candidato_id: int, db: Session = Depends(database.get_db)):
+    """Elimina el expediente, sus evaluaciones y entrevista; conserva la bitácora de WhatsApp desvinculada."""
+    candidato = db.get(database.Candidato, candidato_id)
+    if candidato is None:
+        raise HTTPException(status_code=404, detail="Candidato no encontrado")
+    try:
+        db.query(database.MensajeWhatsApp).filter(
+            database.MensajeWhatsApp.candidato_id == candidato_id
+        ).update({"candidato_id": None}, synchronize_session=False)
+        db.delete(candidato)
+        db.commit()
+        return {"mensaje": "Candidato y expediente eliminados correctamente"}
+    except Exception:
+        db.rollback()
+        raise HTTPException(status_code=500, detail="No se pudo eliminar el candidato")
+
+
+@app.delete("/api/v1/candidatos/{candidato_id}/cv")
+def eliminar_cv_candidato(candidato_id: int, db: Session = Depends(database.get_db)):
+    """Quita el CV almacenado sin eliminar los datos de contacto del candidato."""
+    candidato = db.get(database.Candidato, candidato_id)
+    if candidato is None:
+        raise HTTPException(status_code=404, detail="Candidato no encontrado")
+    try:
+        candidato.nombre_archivo = None
+        candidato.archivo_bytes = None
+        candidato.texto_completo = ""
+        # Los resultados anteriores ya no representan un CV vigente.
+        for evaluacion in list(candidato.evaluaciones):
+            db.delete(evaluacion)
+        db.commit()
+        return {"mensaje": "CV y evaluaciones eliminados; el candidato permanece registrado"}
+    except Exception:
+        db.rollback()
+        raise HTTPException(status_code=500, detail="No se pudo quitar el CV")
+
+
 @app.post("/api/v1/generar-descripcion")
 def generar_descripcion_puesto(req: GenerarDescripcionRequest):
-    t = req.titulo.strip().title()
-    desc = f"📌 OBJETIVO DEL PUESTO:\nBuscamos un/a {t} proactivo/a para sumarse a nuestro equipo.\n\n🎯 FUNCIONES Y RESPONSABILIDADES:\n• Planificar, ejecutar y supervisar las actividades clave del área de {t}.\n• Optimizar procesos y colaborar con equipos multidisciplinarios.\n\n💼 REQUISITOS:\n• Formación académica afín a {t}.\n• Experiencia previa comprobable.\n• Habilidades de resolución de problemas y trabajo en equipo."
-    return {"descripcion": desc}
+    """Genera una descripción mediante Gemini; no presenta plantillas como IA."""
+    if not req.titulo.strip():
+        raise HTTPException(status_code=422, detail="Indica el título del puesto")
+    key = os.getenv("GEMINI_API_KEY", "").strip()
+    if not key:
+        raise HTTPException(status_code=503, detail="Configura GEMINI_API_KEY en .env")
+    try:
+        import google.generativeai as genai
+        genai.configure(api_key=key)
+        model = genai.GenerativeModel(os.getenv("GEMINI_MODEL", "gemini-2.0-flash"))
+        prompt = ("Redacta en español una descripción profesional de vacante con objetivo, "
+                  "responsabilidades, requisitos y habilidades. No inventes sueldo, prestaciones "
+                  "ni requisitos discriminatorios. Usa solo los datos suministrados. "
+                  f"Puesto: {req.titulo[:150]}\nContexto: {req.contexto[:2000]}\n"
+                  f"Descripción inicial: {req.descripcion[:3000]}")
+        respuesta = model.generate_content(prompt)
+        texto = (getattr(respuesta, "text", None) or "").strip()
+        if not texto:
+            raise ValueError("Gemini no devolvió contenido")
+        return {"descripcion": texto}
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail=f"No fue posible generar la descripción con Gemini: {exc}") from exc
 
 @app.get("/api/v1/vacantes", response_model=List[VacanteResponse])
 def listar_vacantes(db: Session = Depends(database.get_db)):
@@ -307,6 +378,20 @@ def crear_vacante(titulo: str = Form(...), descripcion: str = Form(...), db: Ses
     db.commit()
     db.refresh(vacante)
     return vacante
+
+@app.put("/api/v1/vacantes/{vacante_id}", response_model=VacanteResponse)
+def editar_vacante(vacante_id: int, req: VacanteUpdate, db: Session = Depends(database.get_db)):
+    vacante = db.query(database.Vacante).filter(database.Vacante.id == vacante_id).first()
+    if not vacante:
+        raise HTTPException(status_code=404, detail="Vacante no encontrada")
+    if not req.titulo.strip() or not req.descripcion.strip():
+        raise HTTPException(status_code=422, detail="El título y la descripción son obligatorios")
+    vacante.titulo = req.titulo.strip()
+    vacante.descripcion = req.descripcion.strip()
+    db.commit()
+    db.refresh(vacante)
+    return vacante
+
 
 @app.delete("/api/v1/vacantes/{vacante_id}")
 def eliminar_vacante(vacante_id: int, db: Session = Depends(database.get_db)):
@@ -344,14 +429,39 @@ def obtener_ranking(vacante_id: int, db: Session = Depends(database.get_db)):
     except Exception as e:
         print(f"🔴 ERROR AL OBTENER RANKING: {e}")
         return []
-@app.delete("/api/v1/vacantes/{vacante_id}")
-def eliminar_vacante(vacante_id: int, db: Session = Depends(database.get_db)):
-    vacante = db.query(database.Vacante).filter(database.Vacante.id == vacante_id).first()
-    if not vacante:
-        raise HTTPException(status_code=404, detail="Vacante no encontrada")
-    db.delete(vacante)
-    db.commit()
-    return {"mensaje": "Vacante eliminada"}
+
+@app.post("/api/v1/mensajes-whatsapp")
+def registrar_mensaje_whatsapp(payload: dict, db: Session = Depends(database.get_db)):
+    try:
+        registro = database.MensajeWhatsApp(
+            candidato_id=payload.get("candidato_id"),
+            telefono=str(payload.get("telefono", "")),
+            mensaje=str(payload.get("mensaje", "")),
+            estado=str(payload.get("estado", "Pendiente")),
+            proveedor=str(payload.get("proveedor", "UltraMsg")),
+            detalle=str(payload.get("detalle", "")),
+            respuesta_proveedor=json.dumps(payload.get("respuesta"), ensure_ascii=False, default=str),
+        )
+        db.add(registro)
+        db.commit()
+        db.refresh(registro)
+        return {"id": registro.id, "estado": registro.estado, "creado_en": registro.creado_en.isoformat() if registro.creado_en else None}
+    except Exception as exc:
+        db.rollback()
+        raise HTTPException(status_code=500, detail=f"No se pudo registrar el mensaje: {exc}")
+
+
+@app.get("/api/v1/mensajes-whatsapp")
+def listar_mensajes_whatsapp(limit: int = 100, db: Session = Depends(database.get_db)):
+    limit = max(1, min(limit, 500))
+    registros = db.query(database.MensajeWhatsApp).order_by(database.MensajeWhatsApp.id.desc()).limit(limit).all()
+    return [{
+        "id": r.id, "candidato_id": r.candidato_id, "telefono": r.telefono,
+        "mensaje": r.mensaje, "estado": r.estado, "proveedor": r.proveedor,
+        "detalle": r.detalle, "respuesta_proveedor": r.respuesta_proveedor,
+        "creado_en": r.creado_en.isoformat() if r.creado_en else None,
+    } for r in registros]
+
 
 @app.get("/api/v1/entrevistas")
 def listar_entrevistas(db: Session = Depends(database.get_db)):
@@ -381,3 +491,41 @@ def actualizar_estado_entrevista(entrevista_id: int, req: EntrevistaEstadoUpdate
         entrevista.tipo_finalista = req.tipo_finalista
     db.commit()
     return {"mensaje": "Estado actualizado"}
+
+@app.post("/api/v1/evaluar/{vacante_id}")
+@app.post("/api/v1/ranking/{vacante_id}/evaluar")
+def generar_ranking_vacante(vacante_id: int, db: Session = Depends(database.get_db)):
+    """Calcula similitud semántica local y actualiza evaluaciones existentes."""
+    vacante = db.get(database.Vacante, vacante_id)
+    if vacante is None:
+        raise HTTPException(status_code=404, detail="Vacante no encontrada")
+    descripcion = (vacante.descripcion or "").strip()
+    if not descripcion:
+        raise HTTPException(status_code=422, detail="La vacante necesita una descripción")
+    candidatos = db.query(database.Candidato).all()
+    validos = [c for c in candidatos if (c.texto_completo or "").strip() and c.texto_completo != "Procesado visualmente"]
+    if not validos:
+        return {"mensaje": "No hay candidatos con texto de CV extraído para evaluar", "evaluados": 0, "ranking": []}
+    try:
+        scores = calcular_similitud_semantica_lote(
+            f"{vacante.titulo or ''}. {descripcion}", [c.texto_completo for c in validos]
+        )
+        for candidato, score in zip(validos, scores):
+            score = round(max(0.0, min(100.0, float(score))), 2)
+            resumen, justificacion = generar_resumen_y_fit(candidato.texto_completo, descripcion, score)
+            evaluacion = db.query(database.Evaluacion).filter_by(
+                vacante_id=vacante_id, candidato_id=candidato.id
+            ).first()
+            if evaluacion is None:
+                evaluacion = database.Evaluacion(vacante_id=vacante_id, candidato_id=candidato.id)
+                db.add(evaluacion)
+            evaluacion.score_similitud = score
+            evaluacion.resumen_ejecutivo = resumen
+            evaluacion.justificacion_fit = justificacion
+        db.commit()
+    except Exception as exc:
+        db.rollback()
+        raise HTTPException(status_code=500, detail=f"Falló la evaluación semántica: {exc}") from exc
+    return {"mensaje": "Evaluación semántica completada; resultados orientativos sujetos a revisión humana",
+            "evaluados": len(validos), "omitidos_sin_texto": len(candidatos) - len(validos),
+            "ranking": obtener_ranking(vacante_id, db)}

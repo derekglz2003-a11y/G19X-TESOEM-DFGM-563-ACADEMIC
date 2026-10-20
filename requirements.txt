@@ -12,3 +12,7 @@ python-docx
 Pillow
 pytesseract
 psycopg2-binary
+
+sentence-transformers
+PyMuPDF
+pandas

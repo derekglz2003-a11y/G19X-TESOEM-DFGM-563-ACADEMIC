@@ -1,9 +1,10 @@
 import os
+import json
 from dotenv import load_dotenv
-from sqlalchemy import create_engine, Column, Integer, String, Float, Text, ForeignKey, LargeBinary
+from sqlalchemy import create_engine, Column, Integer, String, Float, Text, ForeignKey, LargeBinary, DateTime
 from sqlalchemy.orm import declarative_base, sessionmaker, relationship
+from sqlalchemy.sql import func
 
-# Cargar las variables del archivo .env
 load_dotenv()
 
 # Conexión remota a Supabase o respaldo local
@@ -26,55 +27,46 @@ Base = declarative_base()
 
 class Vacante(Base):
     __tablename__ = "vacantes"
-    
     id = Column(Integer, primary_key=True, index=True)
     titulo = Column(String, index=True)
     descripcion = Column(Text)
-    
     evaluaciones = relationship("Evaluacion", back_populates="vacante", cascade="all, delete-orphan")
 
 
 class Candidato(Base):
     __tablename__ = "candidatos"
-    
     id = Column(Integer, primary_key=True, index=True)
     nombre_archivo = Column(String)
-    
-    # Datos completos extraídos por la IA
     nombre = Column(String, default="No especificado")
     edad = Column(String, default="No especificada")
     sexo = Column(String, default="No especificado")
     email = Column(String, default="No especificado")
     telefono = Column(String, default="No especificado")
-    perfil_destacado = Column(String, default="General")  # Categoría / Puesto sugerido
-    desempeno = Column(String, default="Alto Potencial")    # Desempeño / Nivel evaluado
+    perfil_destacado = Column(String, default="General")
+    desempeno = Column(String, default="Alto Potencial")
     experiencia = Column(Text, default="")
     skills = Column(Text, default="")
     puntos_fuertes = Column(Text, default="")
     texto_completo = Column(Text, default="")
     archivo_bytes = Column(LargeBinary, nullable=True)
-    
     evaluaciones = relationship("Evaluacion", back_populates="candidato", cascade="all, delete-orphan")
     entrevista = relationship("Entrevista", back_populates="candidato", uselist=False, cascade="all, delete-orphan")
 
 
 class Evaluacion(Base):
     __tablename__ = "evaluaciones"
-    
     id = Column(Integer, primary_key=True, index=True)
     vacante_id = Column(Integer, ForeignKey("vacantes.id"))
     candidato_id = Column(Integer, ForeignKey("candidatos.id"))
     score_similitud = Column(Float, default=0.0)
     resumen_ejecutivo = Column(Text, default="")
     justificacion_fit = Column(Text, default="")
-
     vacante = relationship("Vacante", back_populates="evaluaciones")
     candidato = relationship("Candidato", back_populates="evaluaciones")
 
 
 class Entrevista(Base):
     __tablename__ = "entrevistas"
-    
     id = Column(Integer, primary_key=True, index=True)
     candidato_id = Column(Integer, ForeignKey("candidatos.id"), unique=True)
     nombre = Column(String)
@@ -84,11 +76,25 @@ class Entrevista(Base):
     lugar = Column(String, default="Google Meet")
     estado = Column(String, default="🗓️ Programada")
     tipo_finalista = Column(String, default="En capacitación")
-
     candidato = relationship("Candidato", back_populates="entrevista")
 
 
+class MensajeWhatsApp(Base):
+    """Bitácora auditable de notificaciones enviadas o fallidas."""
+    __tablename__ = "mensajes_whatsapp"
+    id = Column(Integer, primary_key=True, index=True)
+    candidato_id = Column(Integer, ForeignKey("candidatos.id", ondelete="SET NULL"), nullable=True, index=True)
+    telefono = Column(String(32), nullable=False, index=True)
+    mensaje = Column(Text, nullable=False)
+    estado = Column(String(32), nullable=False, default="Pendiente", index=True)
+    proveedor = Column(String(40), nullable=False, default="UltraMsg")
+    detalle = Column(Text, default="")
+    respuesta_proveedor = Column(Text, default="")
+    creado_en = Column(DateTime(timezone=True), server_default=func.now(), nullable=False, index=True)
+
+
 Base.metadata.create_all(bind=engine)
+
 
 def get_db():
     db = SessionLocal()
@@ -96,3 +102,4 @@ def get_db():
         yield db
     finally:
         db.close()
+
