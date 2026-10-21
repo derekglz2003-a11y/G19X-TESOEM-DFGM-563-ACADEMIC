@@ -1,7 +1,7 @@
 from fastapi import FastAPI, Depends, Form, File, UploadFile, HTTPException, Response
 from sqlalchemy.orm import Session
 from typing import List, Optional
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
 import database
 from embeddings import calcular_similitud_semantica_lote
 from parser import generar_resumen_y_fit
@@ -24,8 +24,7 @@ class VacanteResponse(BaseModel):
     titulo: str
     descripcion: str
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 class VacanteUpdate(BaseModel):
     titulo: str
@@ -37,6 +36,7 @@ class GenerarDescripcionRequest(BaseModel):
     descripcion: str = ""
 
 class EntrevistaCreate(BaseModel):
+    vacante_id: Optional[int] = None
     candidato_id: int
     nombre: str
     puesto: str
@@ -65,38 +65,41 @@ def limpiar_texto_para_db(texto: str) -> str:
     return t.strip()
 
 def extraer_texto_multiformato(filename: str, file_bytes: bytes) -> str:
-    ext = filename.split(".")[-1].lower()
+    """Extrae texto; no fabrica perfiles cuando la lectura falla."""
+    ext = filename.rsplit(".", 1)[-1].lower()
     texto = ""
-
     if ext == "pdf":
         try:
             import pypdf
             reader = pypdf.PdfReader(io.BytesIO(file_bytes))
-            for page in reader.pages:
-                t = page.extract_text()
-                if t: 
-                    texto += t + "\n"
+            texto = "\n".join(page.extract_text() or "" for page in reader.pages)
         except Exception:
             pass
-
-    elif ext in ["docx", "doc"]:
-        try:
-            import docx
-            doc = docx.Document(io.BytesIO(file_bytes))
-            texto = "\n".join([p.text for p in doc.paragraphs if p.text])
-        except Exception:
-            pass
-
-    elif ext in ["png", "jpg", "jpeg", "webp"]:
+        if not texto.strip():
+            try:
+                import fitz
+                with fitz.open(stream=file_bytes, filetype="pdf") as doc:
+                    texto = "\n".join(page.get_text() for page in doc)
+            except Exception:
+                pass
+    elif ext == "docx":
+        from docx import Document
+        doc = Document(io.BytesIO(file_bytes))
+        texto = "\n".join(p.text for p in doc.paragraphs if p.text)
+    elif ext == "doc":
+        raise ValueError("El formato .doc antiguo no está soportado. Guarda el CV como .docx o PDF.")
+    elif ext == "txt":
+        texto = file_bytes.decode("utf-8-sig", errors="replace")
+    elif ext in ("png", "jpg", "jpeg", "webp"):
         try:
             from PIL import Image
             import pytesseract
-            img = Image.open(io.BytesIO(file_bytes))
-            texto = pytesseract.image_to_string(img)
-        except Exception:
-            texto = f"Expediente en imagen: {filename}"
-
-    # Aplicamos la limpieza extrema y limitamos a 15,000 caracteres por seguridad de la BD
+            imagen = Image.open(io.BytesIO(file_bytes))
+            texto = pytesseract.image_to_string(imagen)
+        except Exception as exc:
+            raise ValueError("No se pudo leer la imagen; verifica Tesseract OCR o utiliza PDF con texto") from exc
+    else:
+        raise ValueError("Formato de CV no admitido")
     return limpiar_texto_para_db(texto)[:15000]
 
 
@@ -152,9 +155,10 @@ def extraer_datos_cv_ia(file_bytes: bytes, texto_cv: str, filename: str) -> dict
             res = model.generate_content(content)
             return json.loads(res.text)
         except Exception as e:
-            print(f"[Gemini API Warning] {e}. Usando extractor heurístico.")
+            print(f"[Gemini] Falló el extractor ({type(e).__name__}); usando modo local.")
 
-    # 2. Extractor Heurístico (Totalmente blindado contra código basura)
+    # 2. Extractor local cuando el modelo generativo no está configurado.
+    # No inventar habilidades ni calificar al candidato sin evidencia.
     texto_low = texto_cv.lower()
 
     emails = re.findall(r'[a-zA-Z0-9_%.+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}', texto_cv)
@@ -173,7 +177,7 @@ def extraer_datos_cv_ia(file_bytes: bytes, texto_cv: str, filename: str) -> dict
     elif re.search(r'\b(femenino|mujer)\b', texto_low): 
         sexo = "Femenino"
 
-    nombre_clean = filename.split('.')[0].replace("_", " ").replace("-", " ").title()
+    nombre_clean = filename.rsplit('.', 1)[0].replace("_", " ").replace("-", " ").title()
     match_nombre = re.search(r'(?:nombre(?:\s+candidato)?|candidato)\s*[:|\n\r\-]\s*([a-záéíóúñÁÉÍÓÚÑ\s]{3,40})', texto_cv, re.IGNORECASE)
     if match_nombre:
         posible_nombre = match_nombre.group(1).split('\n')[0].strip().title()
@@ -195,10 +199,10 @@ def extraer_datos_cv_ia(file_bytes: bytes, texto_cv: str, filename: str) -> dict
         "email": email,
         "telefono": telefono,
         "perfil_destacado": puesto_sugerido,
-        "desempeno": "Alto Potencial / Calificado",
-        "experiencia": exp_resumen[:300],
-        "skills": "Compromiso, Responsabilidad, Adaptabilidad",
-        "puntos_fuertes": f"• Experiencia en {puesto_sugerido}.\n• Disposición laboral."
+        "desempeno": "Pendiente de evaluación",
+        "experiencia": exp_resumen[:1000],
+        "skills": ", ".join(__import__('parser').extraer_skills(texto_cv)),
+        "puntos_fuertes": "Sin evidencias suficientes para resumir fortalezas; revisar CV.",
     }
 
 
@@ -214,7 +218,11 @@ async def cargar_cvs_al_pool(files: List[UploadFile] = File(...), db: Session = 
     for f in files:
         try:
             contenido = await f.read()
+            if len(contenido) > 15 * 1024 * 1024:
+                raise ValueError("El archivo supera el límite de 15 MB")
             texto_cv = extraer_texto_multiformato(f.filename, contenido)
+            if len(texto_cv.strip()) < 35:
+                raise ValueError("No se pudo extraer suficiente texto. Prueba otro PDF o revisa OCR.")
             datos = extraer_datos_cv_ia(contenido, texto_cv, f.filename)
             
             # --- PREVENCIÓN DE DUPLICADOS (Punto 2.2.4) ---
@@ -250,9 +258,8 @@ async def cargar_cvs_al_pool(files: List[UploadFile] = File(...), db: Session = 
         except Exception as e:
             db.rollback() 
             error_msg = str(e)
-            print(f"Error fatal guardando {f.filename} en Supabase: {error_msg}")
             errores.append(f.filename)
-            detalles_error.append(error_msg)
+            detalles_error.append(f"{f.filename}: {error_msg[:160]}")
 
     mensaje_final = f"¡{procesados} candidato(s) procesados y almacenados con éxito!"
     if duplicados > 0:
@@ -268,14 +275,18 @@ async def cargar_cvs_al_pool(files: List[UploadFile] = File(...), db: Session = 
 
 @app.delete("/api/v1/limpiar-pool")
 def limpiar_todos_los_candidatos(db: Session = Depends(database.get_db)):
+    """Limpia todos los candidatos, no solo el último de una lista."""
     try:
         db.query(database.MensajeWhatsApp).filter(
             database.MensajeWhatsApp.candidato_id.isnot(None)
         ).update({"candidato_id": None}, synchronize_session=False)
+        db.query(database.MensajeEntrevista).delete(synchronize_session=False)
+        db.query(database.EntrevistaVacante).delete(synchronize_session=False)
+        db.query(database.Seguimiento).delete(synchronize_session=False)
         for candidato in db.query(database.Candidato).all():
             db.delete(candidato)
         db.commit()
-        return {"mensaje": "Pool eliminado; se conservaron las bitácoras de WhatsApp sin vinculación"}
+        return {"mensaje": "Pool completo eliminado; las bitácoras de WhatsApp se conservaron sin candidato"}
     except Exception:
         db.rollback()
         raise HTTPException(status_code=500, detail="No se pudo limpiar el pool")
@@ -314,6 +325,11 @@ def eliminar_candidato(candidato_id: int, db: Session = Depends(database.get_db)
         db.query(database.MensajeWhatsApp).filter(
             database.MensajeWhatsApp.candidato_id == candidato_id
         ).update({"candidato_id": None}, synchronize_session=False)
+        entrevista_ids = [e.id for e in db.query(database.Entrevista.id).filter_by(candidato_id=candidato_id).all()]
+        if entrevista_ids:
+            db.query(database.MensajeEntrevista).filter(database.MensajeEntrevista.entrevista_id.in_(entrevista_ids)).delete(synchronize_session=False)
+            db.query(database.EntrevistaVacante).filter(database.EntrevistaVacante.entrevista_id.in_(entrevista_ids)).delete(synchronize_session=False)
+        db.query(database.Seguimiento).filter_by(candidato_id=candidato_id).delete(synchronize_session=False)
         db.delete(candidato)
         db.commit()
         return {"mensaje": "Candidato y expediente eliminados correctamente"}
@@ -398,6 +414,8 @@ def eliminar_vacante(vacante_id: int, db: Session = Depends(database.get_db)):
     vacante = db.query(database.Vacante).filter(database.Vacante.id == vacante_id).first()
     if not vacante:
         raise HTTPException(status_code=404, detail="Vacante no encontrada")
+    db.query(database.EntrevistaVacante).filter_by(vacante_id=vacante_id).delete(synchronize_session=False)
+    db.query(database.Seguimiento).filter_by(vacante_id=vacante_id).delete(synchronize_session=False)
     db.delete(vacante)
     db.commit()
     return {"mensaje": "Vacante eliminada"}
@@ -443,21 +461,34 @@ def registrar_mensaje_whatsapp(payload: dict, db: Session = Depends(database.get
             respuesta_proveedor=json.dumps(payload.get("respuesta"), ensure_ascii=False, default=str),
         )
         db.add(registro)
+        db.flush()
+        entrevista_id = payload.get("entrevista_id")
+        if entrevista_id is not None:
+            entrevista = db.get(database.Entrevista, int(entrevista_id))
+            if entrevista is None:
+                raise HTTPException(status_code=404, detail="Entrevista no encontrada para registrar el mensaje")
+            db.add(database.MensajeEntrevista(mensaje_id=registro.id, entrevista_id=entrevista.id))
         db.commit()
         db.refresh(registro)
         return {"id": registro.id, "estado": registro.estado, "creado_en": registro.creado_en.isoformat() if registro.creado_en else None}
-    except Exception as exc:
+    except HTTPException:
         db.rollback()
-        raise HTTPException(status_code=500, detail=f"No se pudo registrar el mensaje: {exc}")
+        raise
+    except Exception:
+        db.rollback()
+        raise HTTPException(status_code=500, detail="No se pudo registrar el mensaje")
 
 
 @app.get("/api/v1/mensajes-whatsapp")
 def listar_mensajes_whatsapp(limit: int = 100, db: Session = Depends(database.get_db)):
     limit = max(1, min(limit, 500))
     registros = db.query(database.MensajeWhatsApp).order_by(database.MensajeWhatsApp.id.desc()).limit(limit).all()
+    relaciones = {m.mensaje_id: m.entrevista_id for m in db.query(database.MensajeEntrevista).filter(
+        database.MensajeEntrevista.mensaje_id.in_([r.id for r in registros])
+    ).all()} if registros else {}
     return [{
-        "id": r.id, "candidato_id": r.candidato_id, "telefono": r.telefono,
-        "mensaje": r.mensaje, "estado": r.estado, "proveedor": r.proveedor,
+        "id": r.id, "candidato_id": r.candidato_id, "entrevista_id": relaciones.get(r.id),
+        "telefono": r.telefono, "mensaje": r.mensaje, "estado": r.estado, "proveedor": r.proveedor,
         "detalle": r.detalle, "respuesta_proveedor": r.respuesta_proveedor,
         "creado_en": r.creado_en.isoformat() if r.creado_en else None,
     } for r in registros]
@@ -465,7 +496,13 @@ def listar_mensajes_whatsapp(limit: int = 100, db: Session = Depends(database.ge
 
 @app.get("/api/v1/entrevistas")
 def listar_entrevistas(db: Session = Depends(database.get_db)):
-    return db.query(database.Entrevista).all()
+    entrevistas = db.query(database.Entrevista).all()
+    mapa = {v.entrevista_id: v.vacante_id for v in db.query(database.EntrevistaVacante).all()}
+    return [{
+        "id": e.id, "candidato_id": e.candidato_id, "vacante_id": mapa.get(e.id),
+        "nombre": e.nombre, "puesto": e.puesto, "fecha": e.fecha, "hora": e.hora,
+        "lugar": e.lugar, "estado": e.estado, "tipo_finalista": e.tipo_finalista,
+    } for e in entrevistas]
 
 @app.post("/api/v1/entrevistas")
 def agendar_entrevista(req: EntrevistaCreate, db: Session = Depends(database.get_db)):
@@ -477,9 +514,27 @@ def agendar_entrevista(req: EntrevistaCreate, db: Session = Depends(database.get
         hora=req.hora,
         lugar=req.lugar
     )
-    db.add(nueva)
-    db.commit()
-    return {"mensaje": "Entrevista guardada"}
+    if db.get(database.Candidato, req.candidato_id) is None:
+        raise HTTPException(status_code=404, detail="Candidato inexistente")
+    if req.vacante_id is not None and db.get(database.Vacante, req.vacante_id) is None:
+        raise HTTPException(status_code=404, detail="Vacante inexistente")
+    if db.query(database.Entrevista).filter_by(candidato_id=req.candidato_id).first():
+        raise HTTPException(status_code=409, detail="Este candidato ya tiene una entrevista registrada")
+    try:
+        db.add(nueva)
+        db.flush()
+        if req.vacante_id is not None:
+            db.add(database.EntrevistaVacante(entrevista_id=nueva.id, vacante_id=req.vacante_id))
+            registro = db.query(database.Seguimiento).filter_by(vacante_id=req.vacante_id, candidato_id=req.candidato_id).first()
+            if registro is None:
+                registro = database.Seguimiento(vacante_id=req.vacante_id, candidato_id=req.candidato_id)
+                db.add(registro)
+            registro.estado = "Entrevista"
+        db.commit()
+    except Exception:
+        db.rollback()
+        raise HTTPException(status_code=500, detail="No se pudo registrar la entrevista")
+    return {"mensaje": "Entrevista guardada", "id": nueva.id}
 
 @app.put("/api/v1/entrevistas/{entrevista_id}/estado")
 def actualizar_estado_entrevista(entrevista_id: int, req: EntrevistaEstadoUpdate, db: Session = Depends(database.get_db)):
@@ -487,8 +542,7 @@ def actualizar_estado_entrevista(entrevista_id: int, req: EntrevistaEstadoUpdate
     if not entrevista:
         raise HTTPException(status_code=404, detail="Entrevista no encontrada")
     entrevista.estado = req.estado
-    if req.tipo_finalista:
-        entrevista.tipo_finalista = req.tipo_finalista
+    entrevista.tipo_finalista = req.tipo_finalista or ""
     db.commit()
     return {"mensaje": "Estado actualizado"}
 
@@ -529,3 +583,144 @@ def generar_ranking_vacante(vacante_id: int, db: Session = Depends(database.get_
     return {"mensaje": "Evaluación semántica completada; resultados orientativos sujetos a revisión humana",
             "evaluados": len(validos), "omitidos_sin_texto": len(candidatos) - len(validos),
             "ranking": obtener_ranking(vacante_id, db)}
+
+
+# --- GESTIÓN DE ETAPAS, EDICIÓN Y CANCELACIÓN (CurriculAi 3.1) ---
+ESTADOS_SEGUIMIENTO = {
+    "En revisión", "Preseleccionado", "Descartado", "Entrevista",
+    "Finalista", "Aceptado", "Rechazado",
+}
+ESTADOS_ENTREVISTA = {
+    "Programada", "Confirmada", "Realizada", "Cancelada", "No asistió",
+    "En evaluación", "Finalista", "Aceptado", "Rechazado",
+}
+
+class ActualizarSeguimiento(BaseModel):
+    estado: str
+
+class CandidatoUpdate(BaseModel):
+    nombre: str
+    email: str = ""
+    telefono: str = ""
+    perfil_destacado: str = ""
+    experiencia: str = ""
+    skills: str = ""
+
+class EntrevistaUpdate(BaseModel):
+    puesto: str
+    fecha: str
+    hora: str
+    lugar: str = "Google Meet"
+
+@app.get("/api/v1/seguimientos")
+def listar_seguimientos(vacante_id: Optional[int] = None, db: Session = Depends(database.get_db)):
+    q = db.query(database.Seguimiento)
+    if vacante_id is not None:
+        q = q.filter(database.Seguimiento.vacante_id == vacante_id)
+    return [{"vacante_id": s.vacante_id, "candidato_id": s.candidato_id, "estado": s.estado}
+            for s in q.all()]
+
+@app.put("/api/v1/seguimientos/{vacante_id}/{candidato_id}")
+def guardar_seguimiento(vacante_id: int, candidato_id: int, req: ActualizarSeguimiento,
+                       db: Session = Depends(database.get_db)):
+    if req.estado not in ESTADOS_SEGUIMIENTO:
+        raise HTTPException(status_code=422, detail="Estado de seguimiento no permitido")
+    if db.get(database.Vacante, vacante_id) is None or db.get(database.Candidato, candidato_id) is None:
+        raise HTTPException(status_code=404, detail="Vacante o candidato inexistente")
+    registro = db.query(database.Seguimiento).filter_by(vacante_id=vacante_id, candidato_id=candidato_id).first()
+    if registro is None:
+        registro = database.Seguimiento(vacante_id=vacante_id, candidato_id=candidato_id)
+        db.add(registro)
+    registro.estado = req.estado
+    try:
+        db.commit()
+    except Exception:
+        db.rollback()
+        raise HTTPException(status_code=500, detail="No se pudo guardar el seguimiento")
+    return {"mensaje": "Estado guardado correctamente", "estado": registro.estado}
+
+@app.put("/api/v1/candidatos/{candidato_id}")
+def actualizar_candidato(candidato_id: int, req: CandidatoUpdate,
+                         db: Session = Depends(database.get_db)):
+    candidato = db.get(database.Candidato, candidato_id)
+    if candidato is None:
+        raise HTTPException(status_code=404, detail="Candidato inexistente")
+    if not req.nombre.strip():
+        raise HTTPException(status_code=422, detail="El nombre es obligatorio")
+    candidato.nombre = req.nombre.strip()[:100]
+    candidato.email = req.email.strip()[:100]
+    candidato.telefono = req.telefono.strip()[:50]
+    candidato.perfil_destacado = req.perfil_destacado.strip()[:100]
+    candidato.experiencia = req.experiencia.strip()[:5000]
+    candidato.skills = req.skills.strip()[:1500]
+    try:
+        db.commit()
+    except Exception:
+        db.rollback()
+        raise HTTPException(status_code=500, detail="No fue posible editar el candidato")
+    return {"mensaje": "Candidato actualizado"}
+
+@app.put("/api/v1/entrevistas/{entrevista_id}")
+def editar_entrevista(entrevista_id: int, req: EntrevistaUpdate,
+                      db: Session = Depends(database.get_db)):
+    entrevista = db.get(database.Entrevista, entrevista_id)
+    if entrevista is None:
+        raise HTTPException(status_code=404, detail="Entrevista no encontrada")
+    from datetime import date as fecha_tipo, time as hora_tipo
+    try:
+        fecha_tipo.fromisoformat(req.fecha)
+        hora_tipo.fromisoformat(req.hora)
+    except ValueError:
+        raise HTTPException(status_code=422, detail="Fecha u hora inválida")
+    if not req.puesto.strip() or not req.lugar.strip():
+        raise HTTPException(status_code=422, detail="Puesto y lugar son obligatorios")
+    entrevista.puesto = req.puesto.strip()[:200]
+    entrevista.fecha = req.fecha
+    entrevista.hora = req.hora
+    entrevista.lugar = req.lugar.strip()[:500]
+    db.commit()
+    return {"mensaje": "Entrevista actualizada"}
+
+@app.delete("/api/v1/entrevistas/{entrevista_id}")
+def borrar_entrevista(entrevista_id: int, db: Session = Depends(database.get_db)):
+    entrevista = db.get(database.Entrevista, entrevista_id)
+    if entrevista is None:
+        raise HTTPException(status_code=404, detail="Entrevista no encontrada")
+    vinculo = db.query(database.EntrevistaVacante).filter_by(entrevista_id=entrevista_id).first()
+    if vinculo is not None:
+        seguimiento = db.query(database.Seguimiento).filter_by(
+            vacante_id=vinculo.vacante_id, candidato_id=entrevista.candidato_id
+        ).first()
+        if seguimiento is not None and seguimiento.estado in ("Entrevista", "Finalista", "Aceptado", "Rechazado"):
+            seguimiento.estado = "En revisión"
+    db.query(database.MensajeEntrevista).filter_by(entrevista_id=entrevista_id).delete(synchronize_session=False)
+    db.query(database.EntrevistaVacante).filter_by(entrevista_id=entrevista_id).delete(synchronize_session=False)
+    db.delete(entrevista)
+    db.commit()
+    return {"mensaje": "Entrevista eliminada; el candidato se conserva"}
+
+@app.put("/api/v1/entrevistas/{entrevista_id}/decision")
+def decidir_entrevista(entrevista_id: int, req: EntrevistaEstadoUpdate,
+                      db: Session = Depends(database.get_db)):
+    if req.estado not in ESTADOS_ENTREVISTA:
+        raise HTTPException(status_code=422, detail="Estado de entrevista no permitido")
+    entrevista = db.get(database.Entrevista, entrevista_id)
+    if entrevista is None:
+        raise HTTPException(status_code=404, detail="Entrevista no encontrada")
+    entrevista.estado = req.estado
+    # Sólo los finalistas o aceptados conservan esta etiqueta.
+    entrevista.tipo_finalista = (req.tipo_finalista or "En evaluación") if req.estado in ("Finalista", "Aceptado") else ""
+    vinculo = db.query(database.EntrevistaVacante).filter_by(entrevista_id=entrevista_id).first()
+    if vinculo is not None:
+        etapa = {
+            "Finalista": "Finalista", "Aceptado": "Aceptado", "Rechazado": "Rechazado",
+            "En evaluación": "En revisión", "Cancelada": "En revisión",
+        }.get(req.estado)
+        if etapa:
+            seguimiento = db.query(database.Seguimiento).filter_by(vacante_id=vinculo.vacante_id, candidato_id=entrevista.candidato_id).first()
+            if seguimiento is None:
+                seguimiento = database.Seguimiento(vacante_id=vinculo.vacante_id, candidato_id=entrevista.candidato_id)
+                db.add(seguimiento)
+            seguimiento.estado = etapa
+    db.commit()
+    return {"mensaje": "Decisión guardada", "estado": entrevista.estado}

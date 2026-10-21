@@ -60,47 +60,29 @@ def extraer_skills(texto_cv: str, descripcion_vacante: str = "") -> list:
     return sorted(list(skills_encontradas))
 
 def generar_resumen_y_fit(texto_cv: str, descripcion_vacante: str, score: float, modo: str = "detallado") -> tuple:
-    lineas = [l.strip() for l in texto_cv.split("\n") if len(l.strip()) > 15]
-    
-    if modo == "corto":
-        extracto = " ".join(lineas[:2]) if lineas else "Sin información suficiente."
-        resumen = f"**Síntesis:** {extracto[:180]}..."
-        
-        if score >= 60:
-            justificacion = f"🟢 **Match Alto ({score}%):** Alta compatibilidad con los requerimientos principales."
-        elif score >= 25:
-            justificacion = f"🟡 **Match Medio ({score}%):** Compatibilidad parcial. Validar en entrevista."
-        else:
-            justificacion = f"🔴 **Match Bajo ({score}%):** Poca o nula coincidencia con el perfil buscado."
-    else:
-        extracto_ampliado = " ".join(lineas[:6]) if lineas else "Sin información suficiente."
-        puntos_destacados = lineas[2:6] if len(lineas) >= 6 else lineas[1:]
-        bloque_puntos = "\n".join([f"• {p[:110]}..." for p in puntos_destacados[:3]])
-        
-        resumen = (
-            f"**Síntesis Ampliada del Perfil:**\n"
-            f"{extracto_ampliado[:450]}...\n\n"
-            f"**Trayectoria y Aspectos Destacados:**\n"
-            f"{bloque_puntos if bloque_puntos else '• Información extraída del documento.'}"
-        )
-        
-        if score >= 60:
-            justificacion = (
-                f"🟢 **Perfil Altamente Compatible ({score}% match)**\n"
-                f"• **Análisis:** El candidato cubre las competencias clave y la trayectoria solicitada para el puesto.\n"
-                f"• **Recomendación:** Agendar entrevista directamente."
-            )
-        elif score >= 25:
-            justificacion = (
-                f"🟡 **Candidato Potencial ({score}% match)**\n"
-                f"• **Análisis:** Presenta coincidencia en aspectos generales pero requiere evaluación en áreas específicas.\n"
-                f"• **Recomendación:** Realizar filtro telefónico previo."
-            )
-        else:
-            justificacion = (
-                f"🔴 **Match Bajo ({score}% match)**\n"
-                f"• **Análisis:** El perfil difiere considerablemente del área funcional y requerimientos de la vacante.\n"
-                f"• **Recomendación:** No recomendado para esta posición."
-            )
-            
+    """Justificación exploratoria con evidencias textuales, sin recomendaciones automáticas."""
+    import unicodedata
+
+    def palabras(texto):
+        normal = unicodedata.normalize("NFKD", str(texto or "").lower())
+        normal = "".join(c for c in normal if not unicodedata.combining(c))
+        return set(re.findall(r"[a-z][a-z0-9+#.]{2,}", normal))
+
+    stop = set("para como sobre entre desde hasta que las los una unos unas del por con sin este estas estos donde debe debera puesto vacante experiencia conocimientos habilidades trabajo persona anos perfil requerimos buscamos tener cuenta mas sus".split())
+    req = palabras(descripcion_vacante) - stop
+    cv = palabras(texto_cv) - stop
+    coincidencias = sorted(req & cv)
+    sin_evidencia = sorted(req - cv)
+    lineas = [l.strip() for l in str(texto_cv).splitlines() if 14 < len(l.strip()) < 500]
+    resumen = (
+        "Fragmento del CV (verificar fuente original): "
+        + (" ".join(lineas[:2])[:280] if lineas else "No se identificó un resumen textual claro.")
+    )
+    justificacion = (
+        f"Similitud semántica calculada: {float(score):.1f} % (indicador orientativo, no probabilidad). "
+        f"Términos presentes en CV y requisitos: {', '.join(coincidencias[:14]) or 'sin coincidencias detectadas'}. "
+        f"Términos que requieren verificación: {', '.join(sin_evidencia[:14]) or 'no identificados'}. "
+        "La ausencia de una palabra NO demuestra ausencia de una habilidad. "
+        "Revisar manualmente los requisitos y la experiencia; no tomar decisiones automáticas."
+    )
     return resumen, justificacion

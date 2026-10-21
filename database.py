@@ -1,7 +1,7 @@
 import os
 import json
 from dotenv import load_dotenv
-from sqlalchemy import create_engine, Column, Integer, String, Float, Text, ForeignKey, LargeBinary, DateTime
+from sqlalchemy import create_engine, Column, Integer, String, Float, Text, ForeignKey, LargeBinary, DateTime, UniqueConstraint
 from sqlalchemy.orm import declarative_base, sessionmaker, relationship
 from sqlalchemy.sql import func
 
@@ -91,6 +91,33 @@ class MensajeWhatsApp(Base):
     detalle = Column(Text, default="")
     respuesta_proveedor = Column(Text, default="")
     creado_en = Column(DateTime(timezone=True), server_default=func.now(), nullable=False, index=True)
+
+
+class Seguimiento(Base):
+    """Etapa de un candidato por vacante; no modifica las tablas anteriores."""
+    __tablename__ = "seguimientos"
+    __table_args__ = (UniqueConstraint("vacante_id", "candidato_id", name="uq_seguimiento_vacante_candidato"),)
+    id = Column(Integer, primary_key=True)
+    vacante_id = Column(Integer, ForeignKey("vacantes.id", ondelete="CASCADE"), nullable=False, index=True)
+    candidato_id = Column(Integer, ForeignKey("candidatos.id", ondelete="CASCADE"), nullable=False, index=True)
+    estado = Column(String(40), nullable=False, default="En revisión")
+    actualizado_en = Column(DateTime(timezone=True), onupdate=func.now(), server_default=func.now())
+    vacante = relationship("Vacante", backref="seguimientos")
+    candidato = relationship("Candidato", backref="seguimientos")
+
+
+class EntrevistaVacante(Base):
+    """Vincula la cita con la vacante, sin alterar la tabla anterior de entrevistas."""
+    __tablename__ = "entrevista_vacante"
+    entrevista_id = Column(Integer, ForeignKey("entrevistas.id", ondelete="CASCADE"), primary_key=True)
+    vacante_id = Column(Integer, ForeignKey("vacantes.id", ondelete="CASCADE"), nullable=False)
+
+
+class MensajeEntrevista(Base):
+    """Asocia mensajes nuevos a su cita sin alterar tablas previas."""
+    __tablename__ = "mensaje_entrevista"
+    mensaje_id = Column(Integer, ForeignKey("mensajes_whatsapp.id", ondelete="CASCADE"), primary_key=True)
+    entrevista_id = Column(Integer, ForeignKey("entrevistas.id", ondelete="CASCADE"), nullable=False, index=True)
 
 
 Base.metadata.create_all(bind=engine)

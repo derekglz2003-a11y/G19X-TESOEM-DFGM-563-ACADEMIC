@@ -1,174 +1,160 @@
+from html import escape
+import math
 import streamlit as st
-import pandas as pd
-import requests
-import os
-import re
-import base64
-from datetime import datetime
-from urllib.parse import quote
-from servicios.api import API_URL, api_get, api_post, api_post_form, api_delete, api_put
-from servicios.whatsapp import enviar_whatsapp_ultramsg, registrar_mensaje_whatsapp
+
+from servicios.api import api_post, api_get, api_put, api_delete
+
+ESTADOS = ["En revisión", "Preseleccionado", "Descartado", "Entrevista", "Finalista", "Aceptado", "Rechazado"]
+
+
+def _txt(v, n=220):
+    return escape(str(v or "")[:n], quote=True)
+
+
+def _err(r):
+    if r is None:
+        return "No hay conexión con FastAPI."
+    try:
+        return str(r.json().get("detail") or r.text)[:350]
+    except Exception:
+        return str(getattr(r, "text", "Error"))[:350]
+
+
+def _flash(msg):
+    st.session_state["flash_candidatos"] = msg
+    st.rerun()
+
+
+def _paginate(items, key, per_page=4):
+    total = max(1, math.ceil(len(items) / per_page))
+    page = min(max(1, st.session_state.get(key, 1)), total)
+    st.session_state[key] = page
+    return items[(page - 1) * per_page: page * per_page], page, total
+
 
 def render(ctx):
-    candidatos = ctx["candidatos"]
-    vacantes = ctx["vacantes"]
-    entrevistas = ctx["entrevistas"]
-    if True:
+    candidatos = ctx.get("candidatos") or []
+    vacantes = ctx.get("vacantes") or []
+    st.markdown('<div class="cai-intro"><div><div class="cai-kicker">GESTIÓN DE TALENTO</div><h1>Candidatos</h1><p class="cai-descripcion">Carga currículums, encuentra perfiles más rápido y administra expedientes sin estar deslizando de más.</p></div></div>', unsafe_allow_html=True)
 
-        st.title("👥 Candidatos")
-        st.caption("Pool central de talento analizado por CurriculAI.")
+    aviso = st.session_state.pop("flash_candidatos", None)
+    if aviso:
+        st.success(aviso)
 
-        upload = st.file_uploader(
-            "Cargar y analizar currículums",
-            type=["pdf", "docx", "doc", "txt", "png", "jpg", "jpeg", "webp"],
+    with st.expander("+ Cargar nuevos currículums", expanded=not bool(candidatos)):
+        archivos = st.file_uploader(
+            "Selecciona archivos",
+            type=["pdf", "docx", "txt", "png", "jpg", "jpeg", "webp"],
             accept_multiple_files=True,
         )
+        if st.button("Analizar y registrar currículums", disabled=not archivos, type="primary", use_container_width=True):
+            files = [("files", (f.name, f.getvalue(), f.type or "application/octet-stream")) for f in archivos]
+            with st.spinner("Extrayendo datos y registrando currículums..."):
+                r = api_post("/api/v1/analizar-cvs-masivo", files=files)
+            if r is not None and r.ok:
+                st.session_state["flash_candidatos"] = r.json().get("mensaje", "Currículums procesados")
+                st.rerun()
+            else:
+                st.error(_err(r))
 
-        if upload:
-            if st.button("🤖 Analizar currículums", type="primary"):
-                files = [
-                    ("files", (f.name, f.getvalue(), f.type or "application/octet-stream"))
-                    for f in upload
-                ]
-                response = api_post("/api/v1/analizar-cvs-masivo", files=files)
+    if not candidatos:
+        st.info("Todavía no hay candidatos registrados.")
+        return
 
-                if response is not None and response.ok:
-                    st.success(response.json().get("mensaje", "CVs procesados."))
-                    st.rerun()
-                else:
-                    detalle = ""
-                    if response is not None:
-                        try:
-                            payload = response.json()
-                            detalle = payload.get("detail") or payload.get("mensaje") or payload.get("detalles_tecnicos") or ""
-                        except Exception:
-                            detalle = response.text[:500]
-                    st.error("No fue posible procesar los CVs. Revisa FastAPI y las dependencias del extractor.")
-                    if detalle:
-                        st.caption(str(detalle))
+    st.markdown('<div class="cai-section">Expedientes registrados</div>', unsafe_allow_html=True)
+    f1, f2 = st.columns([1.5, 1], gap="small")
+    with f1:
+        buscar = st.text_input("Buscar candidato", placeholder="Nombre, habilidades, experiencia o puesto...")
+    with f2:
+        directo = st.selectbox("Ir directo a un expediente", ["Todos"] + [f"{c.get('nombre') or 'Sin nombre'} · #{c.get('id')}" for c in candidatos])
 
-        st.divider()
+    visibles = candidatos[:]
+    if buscar.strip():
+        q = buscar.casefold().strip()
+        visibles = [c for c in visibles if q in " ".join(str(c.get(k) or "") for k in ("nombre", "perfil_destacado", "skills", "experiencia", "email")).casefold()]
+    if directo != "Todos":
+        cid = directo.split("#")[-1].strip()
+        visibles = [c for c in visibles if str(c.get("id")) == cid]
 
-        if candidatos:
-            filas = []
-            for c in candidatos:
-                filas.append({
-                    "Candidato": c.get("nombre") or "Sin nombre",
-                    "Perfil": c.get("perfil_destacado") or "General",
-                    "Desempeño": c.get("desempeno") or "Sin evaluar",
-                    "Correo": c.get("email") or "No disponible",
-                    "Teléfono": c.get("telefono") or "No disponible",
-                })
-            st.markdown('''
-            <style>
-            [data-testid="stDataFrame"] {background:#fffaf7 !important;border:1px solid #e9e2f4;border-radius:16px;overflow:hidden;}
-            [data-testid="stDataFrame"] * {color:#293d5b !important;}
-            .candidate-card {background:linear-gradient(135deg,#ffffff 0%,#fffaf6 55%,#f5f2ff 100%);border:1px solid #e7e1f3;border-radius:18px;padding:20px 22px;margin:8px 0 14px;box-shadow:0 8px 22px rgba(76,70,130,.06)}
-            .candidate-kicker {font-size:11px;font-weight:800;letter-spacing:1px;text-transform:uppercase;color:#7460d8;margin-bottom:5px}
-            .candidate-title {font-size:23px;font-weight:800;color:#1b365e;line-height:1.25;margin:0 0 8px}
-            .candidate-pill {display:inline-block;padding:5px 10px;border-radius:999px;background:#e7f8f0;color:#177c59;font-weight:700;font-size:12px;margin:3px 4px 3px 0}
-            </style>
-            ''', unsafe_allow_html=True)
-            st.subheader("🧑‍💼 Expediente del candidato")
-            selector_opciones = {
-                f"{c.get('nombre') or 'Sin nombre'} · #{c.get('id', '?')} · {c.get('perfil_destacado') or 'General'}": c
-                for c in candidatos
-            }
-            seleccionado = st.selectbox("Selecciona el expediente que quieres consultar", list(selector_opciones.keys()))
-            candidato = selector_opciones[seleccionado]
-            nombre_c = candidato.get("nombre") or "Candidato sin nombre"
-            perfil_c = candidato.get("perfil_destacado") or "Perfil general"
-            estado_c = candidato.get("desempeno") or "Pendiente de evaluación"
-            st.markdown(f'''<div class="candidate-card">
-                <div class="candidate-kicker">EXPEDIENTE · ID {candidato.get('id', '—')}</div>
-                <div class="candidate-title">{nombre_c}</div>
-                <span class="candidate-pill">{perfil_c}</span><span class="candidate-pill">{estado_c}</span>
-            </div>''', unsafe_allow_html=True)
+    items, pagina, total = _paginate(visibles, "page_candidatos", per_page=4)
+    st.caption(f"{len(visibles)} de {len(candidatos)} candidatos · página {pagina} de {total}")
+    n1, n2 = st.columns(2)
+    with n1:
+        if st.button("← Anterior", key="cand_prev", disabled=pagina <= 1):
+            st.session_state["page_candidatos"] = pagina - 1
+            st.rerun()
+    with n2:
+        if st.button("Siguiente →", key="cand_next", disabled=pagina >= total):
+            st.session_state["page_candidatos"] = pagina + 1
+            st.rerun()
 
-            info_tab, perfil_tab, cv_tab = st.tabs(["👤 Datos de contacto", "✨ Perfil profesional", "📄 CV y texto extraído"])
-            with info_tab:
-                col1, col2 = st.columns(2)
-                with col1:
-                    with st.container(border=True):
-                        st.markdown("#### 📬 Contacto")
-                        st.write(f"**Correo:** {candidato.get('email') or 'No disponible'}")
-                        st.write(f"**Teléfono:** {candidato.get('telefono') or 'No disponible'}")
-                with col2:
-                    with st.container(border=True):
-                        st.markdown("#### 🪪 Datos generales")
-                        st.write(f"**Edad:** {candidato.get('edad') or 'No especificada'}")
-                        st.write(f"**Sexo:** {candidato.get('sexo') or 'No especificado'}")
-                        st.write(f"**Archivo:** {candidato.get('nombre_archivo') or 'No disponible'}")
-            with perfil_tab:
-                col1, col2 = st.columns(2)
-                with col1:
-                    with st.container(border=True):
-                        st.markdown("#### 🧰 Habilidades")
-                        st.write(candidato.get("skills") or "No se detectaron habilidades en el CV.")
-                        st.markdown("#### 💪 Puntos fuertes")
-                        st.write(candidato.get("puntos_fuertes") or "Sin puntos fuertes registrados.")
-                with col2:
-                    with st.container(border=True):
-                        st.markdown("#### 🧭 Experiencia")
-                        st.write(candidato.get("experiencia") or "No se detectó experiencia laboral.")
-                        st.markdown("#### 📊 Evaluación")
-                        st.write(estado_c)
-            with cv_tab:
-                texto_cv = candidato.get("texto_completo") or "No hay texto extraído almacenado para este candidato."
-                st.text_area("Texto recuperado del currículum", value=str(texto_cv), height=260, disabled=True, key=f"cv_texto_{candidato.get('id', 'sin_id')}")
-                st.caption("El archivo original solo puede descargarse si el backend expone un endpoint para recuperarlo.")
-
-            st.divider()
-            st.subheader("🗑️ Administrar expediente")
-            st.caption("Puedes quitar solo el CV o eliminar al candidato completo.")
-
-            id_candidato = candidato.get("id")
-            tiene_cv = bool(candidato.get("nombre_archivo") or candidato.get("texto_completo"))
-            col_cv, col_persona = st.columns(2)
-            with col_cv:
-                if st.button("📄 Quitar CV", key=f"quitar_cv_{id_candidato}", disabled=not tiene_cv, use_container_width=True):
-                    st.session_state[f"confirmar_cv_{id_candidato}"] = True
-            with col_persona:
-                if st.button("🗑️ Eliminar candidato", key=f"eliminar_candidato_{id_candidato}", use_container_width=True):
-                    st.session_state[f"confirmar_candidato_{id_candidato}"] = True
-
-            if st.session_state.get(f"confirmar_cv_{id_candidato}", False):
-                st.warning("Se borrarán el archivo, el texto extraído y las evaluaciones del CV. Se conservará el perfil del candidato.")
-                a, b = st.columns(2)
-                with a:
-                    if st.button("Confirmar quitar CV", key=f"confirmar_quitar_cv_{id_candidato}", type="primary"):
-                        respuesta = api_delete(f"/api/v1/candidatos/{id_candidato}/cv")
-                        if respuesta is not None and respuesta.ok:
-                            st.session_state.pop(f"confirmar_cv_{id_candidato}", None)
-                            st.success("CV eliminado.")
-                            st.rerun()
+    for i in range(0, len(items), 2):
+        cols = st.columns(2, gap="large")
+        for col, c in zip(cols, items[i:i + 2]):
+            cid = c.get("id")
+            with col:
+                st.markdown(
+                    f'<div class="cai-item-card"><div class="cai-item-banner"><div><div class="cai-pretitle">Expediente #{_txt(cid,10)}</div><div class="cai-title">{_txt(c.get("nombre") or "Sin nombre", 60)}</div></div><span class="cai-icon">◎</span></div><div class="cai-item-body"><span class="cai-tag">{_txt(c.get("perfil_destacado") or "Perfil general", 50)}</span><div class="cai-item-meta">{_txt(c.get("email") or "Sin correo", 70)} · {_txt(c.get("telefono") or "Sin teléfono", 30)}</div><div class="cai-item-copy">{_txt(c.get("skills") or "Sin habilidades detectadas", 180)}</div></div></div>',
+                    unsafe_allow_html=True,
+                )
+                with st.expander("Consultar y administrar expediente"):
+                    t1, t2, t3, t4 = st.tabs(["Perfil", "Seguimiento", "Editar", "Eliminar"])
+                    with t1:
+                        st.write("**Experiencia:**", c.get("experiencia") or "No disponible")
+                        st.write("**Fortalezas:**", c.get("puntos_fuertes") or "No disponible")
+                        st.text_area("Texto extraído del CV", value=str(c.get("texto_completo") or "No disponible"), disabled=True, height=170, key=f"cv_{cid}")
+                    with t2:
+                        if not vacantes:
+                            st.info("Primero registra una vacante para asignarle una etapa a este candidato.")
                         else:
-                            st.error(f"No se pudo quitar el CV: {respuesta.text[:300] if respuesta is not None else 'API sin conexión'}")
-                with b:
-                    if st.button("Cancelar", key=f"cancelar_quitar_cv_{id_candidato}"):
-                        st.session_state.pop(f"confirmar_cv_{id_candidato}", None)
-                        st.rerun()
-
-            if st.session_state.get(f"confirmar_candidato_{id_candidato}", False):
-                st.error(f"Se eliminará definitivamente a {nombre_c}, su CV, evaluaciones y entrevista asociada.")
-                a, b = st.columns(2)
-                with a:
-                    if st.button("Confirmar eliminación definitiva", key=f"confirmar_eliminar_candidato_{id_candidato}", type="primary"):
-                        respuesta = api_delete(f"/api/v1/candidatos/{id_candidato}")
-                        if respuesta is not None and respuesta.ok:
-                            st.session_state.pop(f"confirmar_candidato_{id_candidato}", None)
-                            st.success("Candidato eliminado.")
-                            st.rerun()
-                        else:
-                            st.error(f"No se pudo eliminar: {respuesta.text[:300] if respuesta is not None else 'API sin conexión'}")
-                with b:
-                    if st.button("Cancelar", key=f"cancelar_eliminar_candidato_{id_candidato}"):
-                        st.session_state.pop(f"confirmar_candidato_{id_candidato}", None)
-                        st.rerun()
-
-            st.divider()
-            st.subheader("📋 Resumen de candidatos")
-            st.caption("Consulta rápidamente los perfiles que ya fueron procesados.")
-            st.dataframe(pd.DataFrame(filas), use_container_width=True, hide_index=True, height=min(420, 42 * (len(filas) + 1)))
-        else:
-            st.info("No hay candidatos registrados todavía.")
+                            opciones = {f"{v.get('titulo')} · #{v.get('id')}": v for v in vacantes}
+                            seleccion = st.selectbox("Vacante", list(opciones), key=f"seg_v_{cid}")
+                            vac = opciones[seleccion]
+                            vid = vac.get("id")
+                            seguimientos = api_get(f"/api/v1/seguimientos?vacante_id={vid}", [])
+                            estado = next((s.get("estado") for s in seguimientos if str(s.get("candidato_id")) == str(cid)), "En revisión") if isinstance(seguimientos, list) else "En revisión"
+                            with st.form(f"estado_form_{cid}_{vid}"):
+                                nuevo = st.selectbox("Estado", ESTADOS, index=ESTADOS.index(estado) if estado in ESTADOS else 0)
+                                guardar = st.form_submit_button("Guardar estado", type="primary")
+                            if guardar:
+                                r = api_put(f"/api/v1/seguimientos/{vid}/{cid}", {"estado": nuevo})
+                                if r is not None and r.ok:
+                                    _flash("Seguimiento actualizado.")
+                                else:
+                                    st.error(_err(r))
+                    with t3:
+                        with st.form(f"edit_c_{cid}"):
+                            nombre = st.text_input("Nombre", value=str(c.get("nombre") or ""))
+                            correo = st.text_input("Correo", value=str(c.get("email") or ""))
+                            telefono = st.text_input("Teléfono", value=str(c.get("telefono") or ""))
+                            perfil = st.text_input("Perfil", value=str(c.get("perfil_destacado") or ""))
+                            skills = st.text_area("Habilidades", value=str(c.get("skills") or ""), height=90)
+                            experiencia = st.text_area("Experiencia", value=str(c.get("experiencia") or ""), height=120)
+                            guardar = st.form_submit_button("Guardar cambios", type="primary")
+                        if guardar:
+                            r = api_put(
+                                f"/api/v1/candidatos/{cid}",
+                                {
+                                    "nombre": nombre,
+                                    "email": correo,
+                                    "telefono": telefono,
+                                    "perfil_destacado": perfil,
+                                    "skills": skills,
+                                    "experiencia": experiencia,
+                                },
+                            )
+                            if r is not None and r.ok:
+                                _flash("Candidato actualizado.")
+                            else:
+                                st.error(_err(r))
+                    with t4:
+                        st.warning("Eliminar sólo el CV conserva al candidato. Eliminar expediente borra el registro completo.")
+                        accion = st.radio("Acción", ["Sólo CV", "Expediente completo"], horizontal=True, key=f"delopt_{cid}")
+                        confirma = st.checkbox("Confirmo esta acción", key=f"delconf_{cid}")
+                        if st.button("Eliminar definitivamente", key=f"delete_c_{cid}", disabled=not confirma, use_container_width=True):
+                            url = f"/api/v1/candidatos/{cid}/cv" if accion == "Sólo CV" else f"/api/v1/candidatos/{cid}"
+                            r = api_delete(url)
+                            if r is not None and r.ok:
+                                _flash("Eliminación realizada.")
+                            else:
+                                st.error(_err(r))

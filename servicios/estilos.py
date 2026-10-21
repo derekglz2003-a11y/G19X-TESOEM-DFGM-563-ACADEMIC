@@ -1,613 +1,207 @@
 import streamlit as st
-import streamlit as st
-import base64
-from pathlib import Path
 
+CSS = """
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
+:root {
+  --cai-blue:#173a62;
+  --cai-blue-dark:#102d42;
+  --cai-blue-soft:#eef4f8;
+  --cai-accent:#245b8e;
+  --cai-text:#18364a;
+  --cai-muted:#6d8392;
+  --cai-bg:#f4f7fa;
+  --cai-border:#d7e1e8;
+  --cai-white:#ffffff;
+  --cai-good:#11795f;
+  --cai-bad:#a83b3b;
+  --cai-warn:#9c6b12;
+}
+html, body, .stApp, [class*="css"] {
+  font-family: Inter, system-ui, -apple-system, Segoe UI, sans-serif !important;
+  color: var(--cai-text) !important;
+}
+html,body,.stApp,[data-testid="stAppViewContainer"]{background:var(--cai-bg)!important;}
+[data-testid="stMain"], [data-testid="stHeader"] {background:transparent!important;}
+/* Conservar a stMain como contenedor desplazable para todas las paginas.
+   overflow: visible anulaba el scroll interno de Streamlit. */
+[data-testid="stMain"] {
+  overflow-y: auto !important;
+  overflow-x: hidden !important;
+  min-height: 0 !important;
+}
+[data-testid="stSidebar"], [data-testid="collapsedControl"] {display:none!important;}
+[data-testid="stMainBlockContainer"] {
+  max-width: 1600px !important;
+  padding: 0.75rem 1.35rem 2rem !important;
+}
+[data-testid="stVerticalBlock"] {gap:0.7rem;}
+h1,h2,h3,h4{color:var(--cai-blue-dark)!important;letter-spacing:-.02em!important;}
+h1{font-size:2rem!important; margin-bottom:.2rem!important;}
+h2{font-size:1.25rem!important;}
+p, li, label, [data-testid="stCaptionContainer"]{color:var(--cai-text)!important;}
 
-# El fondo ahora se carga desde fondo.jpeg; ya no se incrusta la imagen anterior.
+/* Topbar fija */
+[class*="st-key-cai_topbar"]{
+  position:sticky!important; top:0!important; z-index:9999!important;
+  width:calc(100vw - 24px)!important;
+  margin-left:calc(50% - 50vw + 12px)!important;
+  box-sizing:border-box!important;
+  background:var(--cai-blue)!important; border-radius:0 0 14px 14px!important;
+  padding:9px max(18px, calc((100vw - 1580px) / 2))!important;
+  margin-bottom:10px!important;
+  box-shadow:0 8px 20px rgba(16,45,66,.16)!important;
+}
+.cai-brand-wrap{display:flex;align-items:center;gap:12px;min-width:0;}
+.cai-brand-title{font-size:1.12rem!important;font-weight:800!important;color:#fff!important;line-height:1.08;margin:0!important;white-space:nowrap;}
+.cai-brand-sub{font-size:.58rem!important;font-weight:700!important;letter-spacing:.06em;color:#dcecf5!important;text-transform:uppercase;white-space:nowrap;}
+[class*="st-key-cai_topbar"] [data-testid="stImage"] img{border-radius:10px; background:white; padding:4px;}
+.cai-top-actions{display:flex;justify-content:flex-end;align-items:center;gap:8px;}
+.cai-status{display:inline-flex;align-items:center;justify-content:center;padding:8px 11px;border-radius:999px;font-size:.74rem;font-weight:700;white-space:nowrap;}
+.cai-status.ok{background:#244e79;color:#dff4eb;}
+.cai-status.error{background:#6c3b46;color:#ffe7e7;}
+.cai-top-divider{height:1px;background:#d8e2e9;margin:10px 0 14px 0;}
 
+/* Navegación compacta: las siete secciones siempre visibles sin desplazamiento lateral.
+   El texto completo se mantiene y el espacio se distribuye a todo lo ancho. */
+[class*="st-key-cai_topbar"] [data-testid="stHorizontalBlock"] {gap:.42rem!important;align-items:center!important;}
+[class*="st-key-cai_topbar"] [data-testid="stRadio"] {width:100%!important;min-width:0!important;}
+[class*="st-key-cai_topbar"] [data-testid="stRadio"] div[role="radiogroup"] {
+    display:flex!important;
+    flex-wrap:nowrap!important;
+    align-items:center!important;
+    justify-content:center!important;
+    gap:3px!important;
+    width:100%!important;
+    overflow-x:visible!important;
+    min-width:0!important;
+}
+[class*="st-key-cai_topbar"] [data-testid="stRadio"] div[role="radiogroup"] label {
+    border:1px solid transparent!important;
+    border-radius:8px!important;
+    padding:7px 8px!important;
+    margin:0!important;
+    min-height:36px!important;
+    flex:0 0 auto!important;
+    background:transparent!important;
+    transition:background .15s ease;
+}
+[class*="st-key-cai_topbar"] [data-testid="stRadio"] div[role="radiogroup"] label p {
+    color:#fff!important;
+    font-size:clamp(.65rem,.78vw,.85rem)!important;
+    font-weight:700!important;
+    white-space:nowrap!important;
+}
+[class*="st-key-cai_topbar"] [data-testid="stRadio"] div[role="radiogroup"] label:hover {background:rgba(255,255,255,.13)!important;}
+[class*="st-key-cai_topbar"] [data-testid="stRadio"] div[role="radiogroup"] label:has(input:checked) {background:#edf3f7!important;}
+[class*="st-key-cai_topbar"] [data-testid="stRadio"] div[role="radiogroup"] label:has(input:checked) p {color:var(--cai-blue)!important;}
+/* Ocultamos sólo los círculos decorativos, no el área clicable. */
+[class*="st-key-cai_topbar"] [data-testid="stRadio"] label [data-baseweb="radio"] > div:first-child {display:none!important;}
+[class*="st-key-cai_topbar"] [data-testid="stRadio"] label [data-baseweb="radio"] {margin:0!important;}
+[class*="st-key-cai_topbar"] [data-testid="stRadio"] label [data-testid="stMarkdownContainer"] {margin:0!important;}
+[class*="st-key-cai_topbar"] .cai-status {font-size:.66rem!important;padding:6px 8px!important;}
+[class*="st-key-cai_topbar"] .cai-brand-sub {font-size:.56rem!important;}
+
+/* En pantallas intermedias, las opciones se distribuyen en dos filas
+   si realmente no caben; nunca se ofrece una barra horizontal molesta. */
+@media (max-width:1160px) {
+  [class*="st-key-cai_topbar"] [data-testid="stRadio"] div[role="radiogroup"] {
+    flex-wrap:wrap!important;justify-content:center!important;row-gap:0!important;
+  }
+  [class*="st-key-cai_topbar"] [data-testid="stRadio"] div[role="radiogroup"] label {padding:4px 6px!important;min-height:30px!important;}
+  [class*="st-key-cai_topbar"] [data-testid="stRadio"] div[role="radiogroup"] label p {font-size:.72rem!important;}
+}
+
+/* En móvil, cabeceras y navegación pueden ocupar dos renglones,
+   pero todos los apartados siguen accesibles sin deslizar lateralmente. */
+@media (max-width:740px) {
+  [class*="st-key-cai_topbar"] {padding:8px 10px!important;}
+  [class*="st-key-cai_topbar"] [data-testid="stHorizontalBlock"] {flex-wrap:wrap!important;gap:6px!important;}
+  [class*="st-key-cai_topbar"] [data-testid="stHorizontalBlock"] > div {flex:1 1 100%!important;width:100%!important;}
+  [class*="st-key-cai_topbar"] [data-testid="stRadio"] div[role="radiogroup"] {flex-wrap:wrap!important;}
+  [class*="st-key-cai_topbar"] [data-testid="stRadio"] div[role="radiogroup"] label p {font-size:.74rem!important;}
+}
+
+/* widgets */
+.stTextInput input,.stTextArea textarea,.stDateInput input,.stTimeInput input,[data-baseweb="select"] > div, .stSelectbox div[data-baseweb="select"] > div, .stFileUploader > section{
+  border-radius:12px!important; border:1px solid var(--cai-border)!important; background:white!important; color:var(--cai-text)!important;
+}
+.stTextInput input:focus,.stTextArea textarea:focus{border-color:var(--cai-accent)!important; box-shadow:0 0 0 1px var(--cai-accent)!important;}
+.stButton > button, .stFormSubmitButton > button, [data-testid="stBaseButton-primary"], [data-testid="stBaseButton-secondary"]{
+  border-radius:11px!important; padding:.58rem .95rem!important; font-weight:750!important;
+  border:1px solid var(--cai-blue)!important; background:var(--cai-blue)!important;
+  color:white!important; box-shadow:none!important;
+}
+.stButton > button p, .stButton > button span,
+.stFormSubmitButton > button p, .stFormSubmitButton > button span,
+[data-testid="stBaseButton-primary"] p,[data-testid="stBaseButton-primary"] span{
+  color:inherit!important; font-weight:750!important;
+}
+.stButton > button:hover,.stFormSubmitButton > button:hover{background:var(--cai-blue-dark)!important;border-color:var(--cai-blue-dark)!important;color:white!important;}
+.stButton > button[kind="secondary"], [data-testid="stBaseButton-secondary"]{
+  background:white!important;color:var(--cai-blue)!important;border-color:#aac2d4!important;
+}
+.stButton > button[kind="secondary"] p,[data-testid="stBaseButton-secondary"] p,
+.stButton > button[kind="secondary"] span,[data-testid="stBaseButton-secondary"] span{color:var(--cai-blue)!important;}
+.stButton > button[kind="secondary"]:hover,[data-testid="stBaseButton-secondary"]:hover{background:#e9f1f7!important;color:var(--cai-blue-dark)!important;}
+.stButton > button:disabled,.stFormSubmitButton > button:disabled{background:#b0bdc9!important;border-color:#b0bdc9!important;color:#243d50!important;opacity:.8!important;}
+.stButton > button:disabled p,.stFormSubmitButton > button:disabled p{color:#243d50!important;}
+
+[data-testid="stExpander"] details, [data-testid="stVerticalBlockBorderWrapper"]{
+  background:white!important; border:1px solid var(--cai-border)!important; border-radius:14px!important; box-shadow:0 3px 12px rgba(16,45,66,.03)!important;
+}
+[data-testid="stExpander"] details summary{padding:.4rem .8rem!important;}
+[data-testid="stExpanderDetails"]{padding:.3rem .95rem .95rem .95rem!important;}
+
+.stTabs [data-baseweb="tab-list"]{gap:8px;}
+.stTabs [data-baseweb="tab"]{border-radius:10px 10px 0 0;background:#eef4f8;border:1px solid #d9e2e9;padding:.45rem .8rem;}
+.stTabs [aria-selected="true"]{background:white;border-bottom-color:white;color:var(--cai-blue-dark);font-weight:700;}
+
+/* Common sections */
+.cai-kicker{color:var(--cai-blue);font-size:.75rem;font-weight:800;letter-spacing:.13em;text-transform:uppercase;}
+.cai-intro{display:flex;justify-content:space-between;align-items:flex-start;gap:12px;flex-wrap:wrap;}
+.cai-descripcion{color:var(--cai-muted)!important;font-size:1rem!important;line-height:1.5;margin-top:3px!important;}
+.cai-section{font-size:1.15rem;font-weight:800;color:var(--cai-blue-dark);margin:.6rem 0 .25rem;}
+.cai-subtle{color:var(--cai-muted);font-size:.85rem;}
+
+.cai-dashboard-hero{width:75%;min-width:320px;background:white;border:1px solid var(--cai-border);border-radius:16px;padding:18px 22px;box-shadow:0 4px 14px rgba(16,45,66,.04);}
+@media(max-width:1100px){.cai-dashboard-hero{width:100%;}}
+.cai-hero-pill{display:inline-block;font-size:.72rem;color:var(--cai-blue);font-weight:800;letter-spacing:.12em;text-transform:uppercase;margin-bottom:8px;}
+.cai-hero-title{font-size:1.55rem;font-weight:800;color:var(--cai-blue-dark);line-height:1.1;margin:0 0 .55rem 0;}
+.cai-hero-copy{font-size:.95rem;color:var(--cai-muted);line-height:1.6;}
+
+.cai-kpi{background:white;border:1px solid var(--cai-border);border-radius:14px;padding:16px 18px;min-height:118px;box-shadow:0 3px 12px rgba(16,45,66,.03);}
+.cai-kpi-top{display:flex;justify-content:space-between;align-items:flex-start;gap:8px;}
+.cai-kpi-label{font-size:.8rem;font-weight:700;color:var(--cai-muted)}
+.cai-kpi-icon{width:36px;height:36px;border-radius:10px;background:var(--cai-blue-soft);display:grid;place-items:center;color:var(--cai-blue);}
+.cai-kpi-number{font-size:2rem;font-weight:800;color:var(--cai-blue-dark);margin-top:.25rem;}
+.cai-kpi-hint{font-size:.76rem;color:var(--cai-muted);}
+
+.cai-item-card{background:white;border:1px solid var(--cai-border);border-radius:16px;overflow:hidden;box-shadow:0 4px 14px rgba(16,45,66,.04);margin-bottom:.7rem;}
+.cai-item-banner{background:var(--cai-blue);padding:14px 17px;display:flex;justify-content:space-between;align-items:flex-start;gap:10px;min-height:76px;}
+.cai-item-banner .cai-title{font-size:1.25rem;font-weight:800;color:white;line-height:1.15;}
+.cai-item-banner .cai-pretitle{font-size:.7rem;color:#cfe0ec;font-weight:800;letter-spacing:.13em;text-transform:uppercase;margin-bottom:6px;}
+.cai-item-banner .cai-icon{font-size:1.9rem;color:#cfe0ec;line-height:1;}
+.cai-item-body{padding:14px 16px 16px 16px;}
+.cai-item-meta{font-size:.8rem;color:var(--cai-muted);margin:.45rem 0 .55rem;line-height:1.5;}
+.cai-item-copy{font-size:.92rem;color:var(--cai-text);line-height:1.55;}
+.cai-tag{display:inline-flex;align-items:center;font-size:.72rem;font-weight:800;padding:6px 10px;border-radius:999px;background:#eef4f8;color:var(--cai-blue);margin-bottom:8px;}
+.cai-tag.green{background:#e6f4ef;color:#16674f}.cai-tag.red{background:#fdeeed;color:#ab3f3f}.cai-tag.gold{background:#fff3d9;color:#9c6b12}
+.cai-outline-box{background:white;border:1px solid var(--cai-border);border-left:4px solid var(--cai-blue);border-radius:14px;padding:14px 16px;margin-bottom:.85rem;}
+.cai-actions-inline{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px;}
+.cai-actions-inline > div{flex:1 1 140px;}
+.cai-mini-note{font-size:.74rem;color:var(--cai-muted);}
+.cai-list-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px;}
+@media(max-width:920px){.cai-list-grid{grid-template-columns:1fr;} [class*="st-key-cai_topbar"]{padding:8px 12px!important;} }
+@media(max-width:650px){[data-testid="stMainBlockContainer"]{padding:.5rem .75rem 2rem!important;} .cai-item-banner .cai-title{font-size:1rem;} .cai-brand-sub{display:none;} }
+
+.stProgress > div > div > div > div{background:var(--cai-blue)!important;}
+</style>
+"""
 
 def aplicar_estilos():
-    # ESTILOS
-    # -----------------------------
-    st.markdown("""
-    <style>
-
-        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
-
-        html, body, [class*="css"] {
-            font-family: 'Inter', sans-serif;
-        }
-
-        /* Forzar tema claro aunque Streamlit esté configurado en modo oscuro */
-        :root {
-            color-scheme: light;
-        }
-
-        html, body, [data-testid="stAppViewContainer"], .stApp,
-        [data-testid="stMain"], [data-testid="stHeader"] {
-            background-color: #f5f8fc !important;
-            color: #183451 !important;
-        }
-
-        [data-testid="stMarkdownContainer"],
-        [data-testid="stMarkdownContainer"] p,
-        [data-testid="stMarkdownContainer"] li,
-        [data-testid="stWidgetLabel"] p,
-        [data-testid="stCaptionContainer"] {
-            color: #435873;
-        }
-
-        [data-testid="stSidebar"] [data-testid="stMarkdownContainer"],
-        [data-testid="stSidebar"] [data-testid="stMarkdownContainer"] p,
-        [data-testid="stSidebar"] [data-testid="stWidgetLabel"] p,
-        [data-testid="stSidebar"] label {
-            color: #243b56 !important;
-        }
-
-        [data-testid="stRadio"] label,
-        [data-testid="stRadio"] label p,
-        [data-testid="stRadio"] div[role="radiogroup"] {
-            color: #243b56 !important;
-        }
-
-        [data-testid="stTextInput"] input,
-        [data-testid="stNumberInput"] input,
-        [data-testid="stDateInput"] input,
-        [data-testid="stTimeInput"] input,
-        [data-testid="stTextArea"] textarea,
-        [data-testid="stSelectbox"] div[data-baseweb="select"] {
-            background-color: #ffffff !important;
-            color: #183451 !important;
-            border-color: #d6e0ec !important;
-        }
-
-        [data-testid="stAppViewContainer"] .stMarkdown pre,
-        [data-testid="stAppViewContainer"] pre,
-        [data-testid="stAppViewContainer"] code {
-            background-color: #eef3fa;
-            color: #183451;
-        }
-
-        .stApp {
-            background: #f5f8fc !important;
-        }
-
-        [data-testid="stSidebar"] {
-            background: #ffffff;
-            border-right: 1px solid #e6ebf2;
-        }
-
-        [data-testid="stSidebar"] > div:first-child {
-            padding-top: 1rem;
-        }
-
-        .brand {
-            padding: 10px 12px 24px 12px;
-            border-bottom: 1px solid #edf1f6;
-            margin-bottom: 18px;
-        }
-
-        .brand-row {
-            display: flex;
-            align-items: center;
-            gap: 14px;
-            min-width: 0;
-        }
-        .brand-row > div:last-child { min-width:0; flex:1; }
-        .brand-row img { flex:0 0 auto; }
-
-        .brand-icon {
-            width: 44px;
-            height: 44px;
-            border-radius: 13px;
-            background: linear-gradient(135deg, #1976f3, #4d8df7);
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            color: white;
-            font-size: 23px;
-            font-weight: 800;
-            box-shadow: 0 8px 20px rgba(25,118,243,.20);	
-	    margin: 0 auto;
-        }
-
-        .brand-name {
-            font-size: 21px;
-            font-weight: 800;
-            color: #12335f;
-            line-height: 1;
-        }
-
-        .brand-sub {
-            font-size: 8px;
-            letter-spacing: .9px;
-            color: #7c8ba1;
-            margin-top: 5px;
-            font-weight: 600;
-        }
-
-        .section-label {
-            color: #91a0b5;
-            font-size: 10px;
-            font-weight: 700;
-            letter-spacing: 1px;
-            margin: 12px 10px 8px;
-        }
-
-        .hero {
-            min-height: 280px;
-            border-radius: 24px;
-            padding: 30px 34px;
-            background:
-                radial-gradient(circle at 80% 25%, rgba(82,145,255,.22), transparent 28%),
-                linear-gradient(135deg, #eef6ff 0%, #dcecff 100%);
-            border: 1px solid #dbe9fb;
-            position: relative;
-            overflow: hidden;
-            box-shadow: 0 10px 30px rgba(43,91,145,.06);
-        }
-
-        .hero h1 {
-            color: #123b72;
-            font-size: 34px;
-            margin: 4px 0 8px;
-            font-weight: 800;
-        }
-
-        .hero h2 {
-            color: #1967d2;
-            font-size: 14px;
-            letter-spacing: .8px;
-            margin: 0 0 15px;
-            font-weight: 700;
-        }
-
-        .hero p {
-            color: #51647c;
-            max-width: 560px;
-            line-height: 1.6;
-            font-size: 14px;
-        }
-
-        .hero-art {
-            position: absolute;
-            right: 24px;
-            top: 28px;
-            width: 245px;
-            height: 205px;
-            border-radius: 35px;
-            background: linear-gradient(145deg, rgba(255,255,255,.78), rgba(185,213,255,.55));
-            transform: rotate(-2deg);
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            box-shadow: 0 20px 40px rgba(54,110,190,.13);
-        }
-
-        .cv-card {
-            width: 130px;
-            height: 158px;
-            background: white;
-            border-radius: 13px;
-            transform: rotate(-7deg);
-            box-shadow: 0 12px 25px rgba(40,75,120,.15);
-            padding: 15px;
-            position: relative;
-        }
-
-        .cv-avatar {
-            width: 30px;
-            height: 30px;
-            border-radius: 50%;
-            background: #dcecff;
-            margin-bottom: 12px;
-        }
-
-        .line {
-            height: 7px;
-            background: #dce8f8;
-            border-radius: 5px;
-            margin: 8px 0;
-        }
-
-        .line.short { width: 62%; }
-        .line.mid { width: 78%; }
-        .line.full { width: 94%; }
-
-        .ai-badge {
-            position: absolute;
-            right: 18px;
-            bottom: 18px;
-            width: 58px;
-            height: 58px;
-            border-radius: 16px;
-            background: #1976f3;
-            color: white;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            font-weight: 800;
-            box-shadow: 0 12px 25px rgba(25,118,243,.32);
-        }
-
-        .metric {
-            background: white;
-            border: 1px solid #e6ebf2;
-            border-radius: 18px;
-            padding: 18px 20px;
-            min-height: 126px;
-            box-shadow: 0 7px 22px rgba(31,63,100,.05);
-        }
-
-        .metric-top {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-        }
-
-        .metric-icon {
-            width: 42px;
-            height: 42px;
-            border-radius: 13px;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            font-size: 20px;
-            background: #edf5ff;
-        }
-
-        .metric-label {
-            color: #66778d;
-            font-size: 12px;
-            font-weight: 600;
-        }
-
-        .metric-value {
-            color: #122a4a;
-            font-size: 29px;
-            font-weight: 800;
-            margin-top: 9px;
-        }
-
-        .metric-foot {
-            color: #8492a6;
-            font-size: 11px;
-            margin-top: 4px;
-        }
-
-        .panel {
-            background: white;
-            border: 1px solid #e6ebf2;
-            border-radius: 18px;
-            padding: 20px;
-            box-shadow: 0 7px 22px rgba(31,63,100,.04);
-        }
-
-        .panel-title {
-            color: #122a4a;
-            font-size: 17px;
-            font-weight: 800;
-            margin-bottom: 4px;
-        }
-
-        .panel-sub {
-            color: #8290a4;
-            font-size: 12px;
-            margin-bottom: 16px;
-        }
-
-        .candidate-row {
-            padding: 13px 4px;
-            border-bottom: 1px solid #eef2f6;
-        }
-
-        .candidate-name {
-            font-weight: 700;
-            color: #193453;
-        }
-
-        .candidate-small {
-            color: #8491a4;
-            font-size: 11px;
-        }
-
-        .pill {
-            display: inline-block;
-            padding: 5px 10px;
-            border-radius: 999px;
-            font-size: 10px;
-            font-weight: 700;
-        }
-
-        .pill-green { background:#e7f8ef; color:#168653; }
-        .pill-blue { background:#e9f3ff; color:#1967d2; }
-        .pill-orange { background:#fff2df; color:#c7780a; }
-        .pill-purple { background:#f1eaff; color:#7444c4; }
-
-        .quick {
-            border-radius: 14px;
-            padding: 14px 16px;
-            margin-bottom: 10px;
-            color: white;
-            font-weight: 700;
-        }
-
-        .quick-blue { background: linear-gradient(135deg,#1976f3,#458df4); }
-        .quick-green { background: linear-gradient(135deg,#16a978,#42c39b); }
-        .quick-purple { background: linear-gradient(135deg,#6e55d9,#9278ee); }
-        .quick-pink { background: linear-gradient(135deg,#9b55d8,#b981ee); }
-
-        .empty {
-            padding: 34px 20px;
-            text-align: center;
-            color: #8795a8;
-            background: #fafcff;
-            border: 1px dashed #dbe3ed;
-            border-radius: 14px;
-        }
-
-        div[data-testid="stButton"] > button, div[data-testid="stLinkButton"] > a {
-            border-radius: 11px;
-            border: 1px solid #d7e2ef;
-            font-weight: 600;
-            color: #17395f !important;
-            background: #ffffff;
-        }
-
-        div[data-testid="stButton"] > button:hover, div[data-testid="stLinkButton"] > a:hover {
-            border-color: #1976f3;
-            color: #145fc5 !important;
-        }
-
-        .stButton > button[kind="primary"] {
-            background: #1976f3;
-            border-color: #1976f3;
-            color: white;
-        }
-
-        h1, h2, h3 {
-            color: #122a4a;
-        }
-
-        .footer {
-            text-align:center;
-            color:#9aa7b8;
-            font-size:10px;
-            padding:25px 0 5px;
-        }
-
-        /* CurriculAI: paleta más viva, cálida y legible */
-        html, body, [data-testid="stAppViewContainer"], .stApp, [data-testid="stMain"] {
-            background: #f7f8ff !important;
-            color: #243451 !important;
-        }
-        [data-testid="stSidebar"] { background: linear-gradient(180deg,#ffffff 0%,#fff9f4 100%) !important; border-right:1px solid #e8e8f5; }
-        .brand { border-bottom:1px solid #eee8fa; }
-        .brand-icon { background:linear-gradient(135deg,#4568f5 0%,#8b5cf6 55%,#ec6c9a 100%); box-shadow:0 9px 22px rgba(116,88,230,.27); }
-        .brand-name { color:#26365d; }
-        .brand-sub { color:#81749e; }
-        .section-label { color:#8d7aa9; }
-        .hero {
-            background: radial-gradient(circle at 85% 18%,rgba(255,185,125,.42),transparent 25%),
-                        radial-gradient(circle at 70% 90%,rgba(175,145,255,.35),transparent 30%),
-                        linear-gradient(125deg,#fff3e8 0%,#f0eaff 48%,#e4f2ff 100%) !important;
-            border:1px solid #e6dafa;
-            box-shadow:0 14px 34px rgba(105,83,180,.10);
-        }
-        .metric { border-color:#ebe5f7; box-shadow:0 8px 24px rgba(95,74,150,.07); }
-        .metric:nth-child(1) { border-top:3px solid #5b7cfa; }
-        .panel { border-color:#e8e3f3; box-shadow:0 8px 24px rgba(95,74,150,.055); }
-        .metric-icon { background:linear-gradient(135deg,#e7edff,#f5e8ff); }
-        .quick-blue { background:linear-gradient(135deg,#4b6cf7,#8b5cf6) !important; }
-        .quick-green { background:linear-gradient(135deg,#12a889,#50c9a7) !important; }
-        .quick-purple { background:linear-gradient(135deg,#8b5cf6,#c084fc) !important; }
-        .quick-pink { background:linear-gradient(135deg,#ef6a9b,#fb9b77) !important; }
-        div[data-testid="stButton"] > button[kind="primary"] { background:linear-gradient(135deg,#4b6cf7,#8058e9) !important; border-color:#665fe9 !important; color:#fff !important; }
-        div[data-testid="stButton"] > button:hover { border-color:#8b5cf6 !important; box-shadow:0 4px 12px rgba(107,86,220,.13); }
-        [data-testid="stRadio"] [role="radiogroup"] label { background:transparent; border-radius:10px; padding:4px 8px; }
-        [data-testid="stRadio"] [role="radiogroup"] label:hover { background:#f0eaff; }
-
-        /* Fondo decorativo suave para que la interfaz no se sienta fría ni plana */
-        [data-testid="stAppViewContainer"] {
-            background-image:
-                radial-gradient(ellipse at 8% 4%, rgba(255, 196, 151, .13), transparent 28%),
-                radial-gradient(ellipse at 95% 16%, rgba(174, 143, 255, .13), transparent 30%),
-                radial-gradient(ellipse at 76% 88%, rgba(99, 196, 229, .10), transparent 28%) !important;
-        }
-        .metric:nth-child(2) { border-top:3px solid #ffad5c; }
-        .metric:nth-child(3) { border-top:3px solid #a46af5; }
-        .metric:nth-child(4) { border-top:3px solid #2dc5a0; }
-        .candidate-row:hover { background:linear-gradient(90deg,#f5f1ff,#fff8f2); border-radius:10px; }
-        [data-testid="stSidebar"] [data-testid="stRadio"] label[data-checked="true"] { background:linear-gradient(90deg,#e8edff,#f5eaff); }
-    </style>
-    """, unsafe_allow_html=True)
-
-    # Fondo tecnológico sutil en TODA la aplicación; las tarjetas mantienen fondo claro
-    # para que los textos y controles sigan siendo legibles.
-    st.markdown(f"""
-    <style>
-    [data-testid="stMainBlockContainer"] {{ position:relative; }}
-    .brand {{ padding:12px 12px 24px 12px; }}
-    .brand-row {{ gap:14px; min-width:0; }}
-    .brand-row img, .brand-row .brand-icon {{ width:86px !important;height:86px !important;min-width:86px;flex:0 0 86px; }}
-    .brand-row > div:last-child {{ min-width:0; flex:1; }}
-    .brand-name {{ font-size:27px !important; line-height:1.15; white-space:normal; }}
-    .brand-tagline {{ margin:12px 0 0 0;color:#1769c2;font-size:11px;font-weight:800;line-height:1.55;letter-spacing:.1px;max-width:100%; overflow-wrap:anywhere; }}
-    [data-testid="stSidebar"] {{ background:linear-gradient(180deg,rgba(255,255,255,.97),rgba(255,249,246,.97)) !important; }}
-    [data-testid="stVerticalBlockBorderWrapper"] {{ background:rgba(255,255,255,.93);border-color:#dfe7f7 !important;border-radius:16px; }}
-    </style>
-    """, unsafe_allow_html=True)
-
-    # Fondo tecnológico adjunto por el usuario: visible de forma sutil detrás de los paneles.
-    # Se usa un overlay claro para que el texto y los formularios sigan siendo legibles.
-    st.markdown(f"""
-    <style>
-    [data-testid="stMain"] > div {{ background: transparent !important; }}
-    [data-testid="stSidebar"] {{ background: linear-gradient(180deg,rgba(255,255,255,.96),rgba(255,249,246,.96)) !important; }}
-    .brand-row {{ align-items:center; gap:15px; min-width:0; }}
-    .brand-row > div:last-child {{ min-width:0; flex:1; }}
-    .brand-name {{ font-size:27px !important; line-height:1.15; }}
-    .brand-tagline {{ margin:12px 0 0 0 !important; max-width:100% !important; font-size:11px !important; line-height:1.55 !important; color:#236cc2 !important; overflow-wrap:anywhere; }}
-    </style>
-    """, unsafe_allow_html=True)
-import base64
-from pathlib import Path
+    st.markdown(CSS, unsafe_allow_html=True)
 
 def aplicar_fondo():
-    """Aplica fondo.jpeg al área principal sin ocultar tarjetas ni formularios."""
-    ruta = Path(__file__).resolve().parent.parent / "fondo.jpeg"
-    if not ruta.is_file():
-        st.error(f"No se encontró la imagen de fondo: {ruta}")
-        return
-
-    imagen = base64.b64encode(ruta.read_bytes()).decode("ascii")
-    st.markdown(
-        f"""
-        <style>
-        /* El contenedor visible de Streamlit es el que recibe la imagen. */
-        .stApp,
-        [data-testid="stAppViewContainer"] {{
-            background-color: #f5f8fc !important;
-            background-image: linear-gradient(
-                rgba(255,255,255,0.12),
-                rgba(255,255,255,0.12)
-            ), url("data:image/jpeg;base64,{imagen}") !important;
-            background-position: center center !important;
-            background-size: cover !important;
-            background-repeat: no-repeat !important;
-            background-attachment: fixed !important;
-        }}
-        [data-testid="stMain"],
-        [data-testid="stMain"] > div,
-        [data-testid="stMainBlockContainer"],
-        [data-testid="stHeader"] {{
-            background: transparent !important;
-            background-image: none !important;
-        }}
-        /* Panel lateral claro para conservar la legibilidad. */
-        [data-testid="stSidebar"],
-        [data-testid="stSidebar"] > div {{
-            background: rgba(255,255,255,0.94) !important;
-        }}
-
-
-
-
-        /* Sidebar: compacta y fija en escritorio */
-        [data-testid="stSidebar"] {{
-            height: 100dvh !important;
-            overflow: hidden !important;
-        }}
-        [data-testid="stSidebarContent"] {{
-            height: 100dvh !important;
-            max-height: 100dvh !important;
-            overflow-y: hidden !important;
-            overflow-x: hidden !important;
-        }}
-        [data-testid="stSidebarUserContent"] {{
-            padding-top: 0.15rem !important;
-            padding-bottom: 0.15rem !important;
-        }}
-        [data-testid="stSidebar"] [data-testid="stVerticalBlock"] {{
-            gap: 0.35rem !important;
-        }}
-        [data-testid="stSidebar"] [data-testid="stVerticalBlock"] > div {{
-            margin-top: 0 !important;
-            margin-bottom: 0 !important;
-        }}
-        [data-testid="stSidebar"] .brand {{
-            padding: 0 8px 6px !important;
-            margin-bottom: 3px !important;
-        }}
-        [data-testid="stSidebar"] img {{
-            max-height: 94px !important;
-            object-fit: contain !important;
-        }}
-        [data-testid="stSidebar"] .brand-name {{
-            font-size: 22px !important;
-        }}
-        [data-testid="stSidebar"] .brand-tagline {{
-            margin: 4px 0 0 !important;
-            font-size: 10px !important;
-            line-height: 1.25 !important;
-        }}
-        [data-testid="stSidebar"] .section-label {{
-            margin: 5px 8px 2px !important;
-        }}
-        [data-testid="stSidebar"] [role="radiogroup"] {{
-            gap: 0 !important;
-        }}
-        [data-testid="stSidebar"] [role="radiogroup"] label {{
-            padding: 3px 7px !important;
-            min-height: 32px !important;
-            border-radius: 9px !important;
-        }}
-        [data-testid="stSidebar"] [role="radiogroup"] label:has(input:checked) {{
-            background: #e7f2ff !important;
-        }}
-        /* CurriculAI: identidad más clara y navegación moderna. */
-        [data-testid="stSidebar"] .brand {{
-            padding: 16px 18px 20px !important;
-            margin: 0 auto 5px !important;
-	    	
-            border-bottom: 1px solid #e8edf7 !important;
-        }}
-        /* El logo se muestra mediante st.image en app.py. */
-        [data-testid="stSidebar"] [data-testid="stImage"] img {{
-            max-height: 116px !important;
-            width: auto !important;
-            object-fit: contain !important;
-        }}
-        [data-testid="stSidebar"] .brand-name {{
-            font-size: 26px !important;
-            font-weight: 800 !important;
-            line-height: 1.16 !important;
-            margin-top: 3px !important;
-            letter-spacing: -.5px !important;
-        }}
-        [data-testid="stSidebar"] .brand-tagline {{
-            display: block !important;
-            font-size: 11px !important;
-            font-weight: 650 !important;
-            line-height: 1.42 !important;
-            margin: 7px 0 5px !important;
-            color: #2b65b0 !important;
-            max-width: 270px !important;
-            overflow-wrap: normal !important;
-        }}
-        [data-testid="stSidebar"] .section-label {{
-            margin: 10px 8px 5px !important;
-            font-size: 10px !important;
-        }}
-        [data-testid="stSidebar"] [role="radiogroup"] label {{
-            min-height: 35px !important;
-            padding: 5px 10px !important;
-            margin: 1px 0 !important;
-            border-radius: 11px !important;
-            transition: background-color .12s ease !important;
-        }}
-        [data-testid="stSidebar"] [role="radiogroup"] label:has(input:checked) {{
-            background: #e6f2ff !important;
-            color: #145fc5 !important;
-            font-weight: 700 !important;
-        }}
-        [data-testid="stSidebar"] [role="radiogroup"] label:hover {{
-            background: #f0f6ff !important;
-        }}
-        /* Ocultar círculos de st.radio; el área azul señala la selección. */
-        [data-testid="stSidebar"] [role="radiogroup"] label [data-baseweb="radio"] > div:first-child {{
-            display: none !important;
-        }}
-        /* Compensar la altura de las opciones sin perder el pie del menú. */
-        [data-testid="stSidebar"] [data-testid="stVerticalBlock"] {{
-            gap: .25rem !important;
-        }}
-        /* Pantallas bajas: permitir acceso a las opciones sin recortarlas. */
-        @media (max-height: 690px) {{
-            [data-testid="stSidebarContent"] {{ overflow-y: auto !important; }}
-        }}
-        </style>
-        """,
-        unsafe_allow_html=True,
-    )
+    # Se conserva como punto de extensión, pero el fondo general ya está definido en CSS.
+    return
