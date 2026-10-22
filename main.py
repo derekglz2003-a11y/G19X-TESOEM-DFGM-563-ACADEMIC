@@ -1,4 +1,6 @@
 from fastapi import FastAPI, Depends, Form, File, UploadFile, HTTPException, Response
+from fastapi.security import APIKeyHeader
+import hmac
 from sqlalchemy.orm import Session
 from typing import List, Optional
 from pydantic import BaseModel, ConfigDict
@@ -15,8 +17,28 @@ load_dotenv()
 
 database.Base.metadata.create_all(bind=database.engine)
 
-# --- ACTUALIZADO A CURRICULAI ---
-app = FastAPI(title="CurriculAi API - Optimizador de Filtrado Curricular", version="2.0.0")
+# --- SEGURIDAD DEL BACKEND (MVP ADMINISTRADOR) ---
+# Todas las rutas operativas (GET, POST, PUT, DELETE) requieren la clave.
+# Swagger documenta el encabezado mediante el esquema de seguridad de APIKeyHeader.
+clave_encabezado = APIKeyHeader(name="X-API-Key", auto_error=False)
+
+
+def exigir_administrador(clave: Optional[str] = Depends(clave_encabezado)):
+    esperada = os.getenv("ADMIN_API_KEY", "").strip()
+    if len(esperada) < 32:
+        raise HTTPException(
+            status_code=503,
+            detail="Seguridad sin configurar: ejecuta python scripts/configurar_acceso.py",
+        )
+    if not clave or not hmac.compare_digest(clave, esperada):
+        raise HTTPException(status_code=401, detail="Credenciales de API incorrectas")
+
+
+app = FastAPI(
+    title="CurriculAi API - Optimizador de Filtrado Curricular",
+    version="3.4.0",
+    dependencies=[Depends(exigir_administrador)],
+)
 
 # --- ESQUEMAS PYDANTIC ---
 class VacanteResponse(BaseModel):

@@ -1,9 +1,9 @@
 from pathlib import Path
-import requests
 import streamlit as st
 from dotenv import load_dotenv
 
-from servicios.api import API_URL, api_get
+from servicios.api import api_get, api_estado
+from servicios.seguridad import acceso_configurado, verificar_contrasena
 from servicios.estilos import aplicar_estilos, aplicar_fondo
 from paginas import inicio, vacantes, candidatos, radar, entrevistas, finalistas, configuracion
 
@@ -43,7 +43,7 @@ def limpiar_sesion_visual():
     actualiza en la siguiente ejecución, ANTES de instanciar st.radio.
     """
     for key in list(st.session_state.keys()):
-        if key != "menu_principal":
+        if key not in ("menu_principal", "cai_autenticado"):
             del st.session_state[key]
     st.session_state["cai_menu_pendiente"] = "Inicio"
     st.rerun()
@@ -63,10 +63,36 @@ if "cai_menu_pendiente" in st.session_state:
 if "menu_principal" not in st.session_state or st.session_state["menu_principal"] not in SECCIONES:
     st.session_state["menu_principal"] = "Inicio"
 
-try:
-    conectada = requests.get(API_URL + "/openapi.json", timeout=2).ok
-except requests.RequestException:
-    conectada = False
+def cerrar_sesion():
+    # No modificar el widget st.radio una vez instanciado en esta ejecución.
+    for key in list(st.session_state.keys()):
+        if key != "menu_principal":
+            del st.session_state[key]
+    st.session_state["cai_menu_pendiente"] = "Inicio"
+    st.rerun()
+
+
+# No mostrar ni consultar expedientes antes de autenticar al administrador.
+if not acceso_configurado():
+    st.error("Falta configurar el acceso administrativo de CurriculAi.")
+    st.info("En la carpeta del proyecto ejecuta: python scripts/configurar_acceso.py. Después reinicia FastAPI y Streamlit.")
+    st.stop()
+
+if not st.session_state.get("cai_autenticado", False):
+    st.markdown('<div style="max-width:500px;margin:38px auto 12px;text-align:center"><h1>CurriculAi</h1><p>Acceso administrativo · Gestión de talento</p></div>', unsafe_allow_html=True)
+    with st.form("cai_form_login"):
+        contrasena = st.text_input("Contraseña de administrador", type="password")
+        entrar = st.form_submit_button("Entrar a CurriculAi", type="primary", use_container_width=True)
+    if entrar:
+        if verificar_contrasena(contrasena):
+            st.session_state["cai_autenticado"] = True
+            st.rerun()
+        else:
+            st.error("Contraseña incorrecta.")
+    st.stop()
+
+codigo_estado = api_estado()
+conectada = codigo_estado == 200
 
 with st.container(key="cai_topbar"):
     marca, nav, acciones = st.columns([1.6, 7.4, 0.8], vertical_alignment="center", gap="small")
@@ -92,7 +118,12 @@ with st.container(key="cai_topbar"):
 
 st.markdown('<div class="cai-top-divider"></div>', unsafe_allow_html=True)
 if not conectada:
-    st.warning("El backend no responde. Los registros podrían no estar disponibles. Verifica FastAPI y API_URL.")
+    if codigo_estado == 401:
+        st.error("El backend rechazó la clave API. Revisa ADMIN_API_KEY y reinicia los dos procesos.")
+    elif codigo_estado == 503:
+        st.error("La clave del administrador no está configurada en FastAPI.")
+    else:
+        st.warning("El backend no responde. Revisa FastAPI y API_URL.")
 
 ctx = {
     "candidatos": api_get("/api/v1/candidatos", []),
@@ -102,6 +133,7 @@ ctx = {
     "api_conectada": conectada,
     "navegar": cambiar_seccion,
     "reiniciar_vista": limpiar_sesion_visual,
+    "cerrar_sesion": cerrar_sesion,
 }
 for clave in ("candidatos", "vacantes", "entrevistas", "mensajes_whatsapp"):
     if not isinstance(ctx[clave], list):

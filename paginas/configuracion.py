@@ -39,4 +39,10 @@ def render(ctx):
                 st.rerun()
             else:
                 st.error("No se pudo limpiar el pool. Verifica el servidor y los permisos.")
-    st.caption("Antes de publicar CurriculAi es necesario implementar autenticación, autorización por roles y protección de los datos personales en FastAPI.")
+    st.markdown('<div class="cai-section">Sesión administrativa</div>', unsafe_allow_html=True)
+    st.caption("El acceso actual es para un único administrador. Los permisos por roles vendrán después.")
+    if st.button("Cerrar sesión", key="cai_cerrar_sesion"):
+        cerrar = ctx.get("cerrar_sesion")
+        if callable(cerrar):
+            cerrar()
+    st.caption("Antes de publicar en Internet se requieren HTTPS, roles, auditoría y políticas de retención de CV.")
