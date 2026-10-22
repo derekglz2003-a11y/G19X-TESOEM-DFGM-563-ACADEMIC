@@ -135,7 +135,11 @@ def panel_vacante(v, candidatos, entrevistas):
                 r = api_post(f"/api/v1/evaluar/{vid}")
             if r is not None and r.ok:
                 info = r.json()
-                _flash(f"Evaluación completada: {info.get('evaluados', 0)} perfiles analizados.")
+                omitidos = info.get("omitidos_sin_perfil", info.get("omitidos_sin_texto", 0))
+                aviso = f"Evaluación completada: {info.get('evaluados', 0)} perfiles analizados."
+                if omitidos:
+                    aviso += f" {omitidos} perfil(es) sin información laboral suficiente; revisa sus expedientes."
+                _flash(aviso)
             else:
                 st.error(_error(r))
     with a2:

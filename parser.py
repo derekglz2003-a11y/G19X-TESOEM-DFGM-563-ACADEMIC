@@ -1,6 +1,7 @@
 # parser.py
 import fitz
 import re
+import unicodedata
 
 SKILLS_UNIVERSALES = [
     # Logística y Transporte
@@ -39,25 +40,23 @@ def extraer_telefono(texto: str) -> str:
     return match.group(0).strip() if match else "No detectado"
 
 def extraer_skills(texto_cv: str, descripcion_vacante: str = "") -> list:
-    texto_lower = texto_cv.lower()
-    skills_encontradas = set()
-    
-    # 1. Catálogo universal
-    for skill in SKILLS_UNIVERSALES:
-        if re.search(r'\b' + re.escape(skill) + r'\b', texto_lower):
-            skills_encontradas.add(skill.title())
-            
-    # 2. Extracción dinámica basada en la Vacante
-    if descripcion_vacante:
-        palabras_vacante = set(re.findall(r'\b[a-zA-Za-áéíóúñÑ]{5,}\b', descripcion_vacante.lower()))
-        stopwords = {"experiencia", "requerido", "solicita", "trabajo", "mínimo", "años", "conocimiento", "capacidad", "perfil", "vacante", "puesto", "empresa", "área"}
-        palabras_clave = palabras_vacante - stopwords
-        
-        for kw in palabras_clave:
-            if re.search(r'\b' + re.escape(kw) + r'\b', texto_lower):
-                skills_encontradas.add(kw.title())
+    """Identifica solo habilidades del catálogo que aparecen en el documento.
 
-    return sorted(list(skills_encontradas))
+    La descripción del puesto no debe inventar habilidades del postulante.
+    No transforma coincidencias de palabras arbitrarias en capacidades.
+    """
+    def normalizar(txt):
+        txt = unicodedata.normalize("NFKD", str(txt or "").casefold())
+        return "".join(ch for ch in txt if not unicodedata.combining(ch))
+
+    contenido = normalizar(texto_cv)
+    encontradas = set()
+    for skill in SKILLS_UNIVERSALES:
+        token = normalizar(skill)
+        if re.search(r"(?<!\w)" + re.escape(token) + r"(?!\w)", contenido):
+            encontradas.add(skill.title())
+    return sorted(encontradas)
+
 
 def generar_resumen_y_fit(texto_cv: str, descripcion_vacante: str, score: float, modo: str = "detallado") -> tuple:
     """Justificación exploratoria con evidencias textuales, sin recomendaciones automáticas."""

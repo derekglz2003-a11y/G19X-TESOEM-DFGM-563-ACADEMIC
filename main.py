@@ -6,8 +6,9 @@ from typing import List, Optional
 from pydantic import BaseModel, ConfigDict
 import database
 from embeddings import calcular_similitud_semantica_lote
-from parser import generar_resumen_y_fit
-import io
+from parser import generar_resumen_y_fit, extraer_skills
+from servicios.perfil_laboral import texto_laboral_candidato, texto_laboral_vacante
+from servicios.extractores_cv import extraer_texto_multiformato, limpiar_texto_para_db
 import re
 import json
 import os
@@ -36,7 +37,7 @@ def exigir_administrador(clave: Optional[str] = Depends(clave_encabezado)):
 
 app = FastAPI(
     title="CurriculAi API - Optimizador de Filtrado Curricular",
-    version="3.4.0",
+    version="3.5.0",
     dependencies=[Depends(exigir_administrador)],
 )
 
@@ -73,58 +74,6 @@ class EntrevistaEstadoUpdate(BaseModel):
 
 # --- EXTRACTOR Y MOTOR DE ANÁLISIS DE CVS ---
 
-def limpiar_texto_para_db(texto: str) -> str:
-    """Filtro de Limpieza Extrema para evitar que Supabase/PostgreSQL colapse."""
-    if not texto: return ""
-    # 1. Eliminar Null Bytes (\x00) que rompen los INSERTS en PostgreSQL
-    t = texto.replace('\x00', ' ')
-    # 2. Eliminar bloques de código binario de PDF (ej. << /Type /Catalog >>)
-    t = re.sub(r'<<.*?>>', '', t, flags=re.DOTALL)
-    # 3. Eliminar rutas internas de PDF
-    t = re.sub(r'/[A-Za-z0-9_]+', ' ', t)
-    # 4. Limitar espacios y saltos de línea
-    t = re.sub(r'\n{3,}', '\n\n', t)
-    return t.strip()
-
-def extraer_texto_multiformato(filename: str, file_bytes: bytes) -> str:
-    """Extrae texto; no fabrica perfiles cuando la lectura falla."""
-    ext = filename.rsplit(".", 1)[-1].lower()
-    texto = ""
-    if ext == "pdf":
-        try:
-            import pypdf
-            reader = pypdf.PdfReader(io.BytesIO(file_bytes))
-            texto = "\n".join(page.extract_text() or "" for page in reader.pages)
-        except Exception:
-            pass
-        if not texto.strip():
-            try:
-                import fitz
-                with fitz.open(stream=file_bytes, filetype="pdf") as doc:
-                    texto = "\n".join(page.get_text() for page in doc)
-            except Exception:
-                pass
-    elif ext == "docx":
-        from docx import Document
-        doc = Document(io.BytesIO(file_bytes))
-        texto = "\n".join(p.text for p in doc.paragraphs if p.text)
-    elif ext == "doc":
-        raise ValueError("El formato .doc antiguo no está soportado. Guarda el CV como .docx o PDF.")
-    elif ext == "txt":
-        texto = file_bytes.decode("utf-8-sig", errors="replace")
-    elif ext in ("png", "jpg", "jpeg", "webp"):
-        try:
-            from PIL import Image
-            import pytesseract
-            imagen = Image.open(io.BytesIO(file_bytes))
-            texto = pytesseract.image_to_string(imagen)
-        except Exception as exc:
-            raise ValueError("No se pudo leer la imagen; verifica Tesseract OCR o utiliza PDF con texto") from exc
-    else:
-        raise ValueError("Formato de CV no admitido")
-    return limpiar_texto_para_db(texto)[:15000]
-
-
 def extraer_datos_cv_ia(file_bytes: bytes, texto_cv: str, filename: str) -> dict:
     api_key_gemini = os.getenv("GEMINI_API_KEY")
     if api_key_gemini:
@@ -133,7 +82,7 @@ def extraer_datos_cv_ia(file_bytes: bytes, texto_cv: str, filename: str) -> dict
             genai.configure(api_key=api_key_gemini)
             
             model = genai.GenerativeModel(
-                'gemini-1.5-flash',
+                os.getenv("GEMINI_MODEL", "gemini-2.0-flash"),
                 generation_config={"response_mime_type": "application/json"}
             )
 
@@ -157,16 +106,16 @@ def extraer_datos_cv_ia(file_bytes: bytes, texto_cv: str, filename: str) -> dict
             - Si NO hay correo electrónico, coloca exactamente: "No contiene correo".
             - Extrae el nombre real del candidato.
             - NUNCA extraigas código, números de serie, ni texto basura como '<</Type...'.
+            - NO extraigas ni infieras edad, sexo, género u otras características protegidas.
+            - En habilidades y experiencia, incluye solo información verificable en el CV.
 
             Estructura JSON requerida:
             {
               "nombre": "Nombre completo",
-              "edad": "Edad o 'No especificada'",
-              "sexo": "Masculino / Femenino / No especificado",
               "email": "Correo o 'No contiene correo'",
               "telefono": "Teléfono a 10 dígitos o 'No contiene número'",
               "perfil_destacado": "Puesto o área detectada",
-              "desempeno": "Alto Potencial / Calificado / Experimentado",
+              "desempeno": "Pendiente de evaluación",
               "experiencia": "Resumen limpio de su experiencia laboral. Máximo 2 párrafos. Cero código basura.",
               "skills": "Habilidades clave separadas por coma",
               "puntos_fuertes": "Fortalezas reales (Usa viñetas •)"
@@ -190,15 +139,6 @@ def extraer_datos_cv_ia(file_bytes: bytes, texto_cv: str, filename: str) -> dict
     telefonos_validos = [t for t in telefonos if len(re.sub(r'\D', '', t)) in [10, 12]]
     telefono = telefonos_validos[0].strip() if telefonos_validos else "No contiene número"
 
-    edades = re.findall(r'(\d{2})\s*(?:años|anos|edad)', texto_cv, re.IGNORECASE)
-    edad = f"{edades[0]}" if edades else "No especificada"
-
-    sexo = "No especificado"
-    if re.search(r'\b(masculino|hombre)\b', texto_low): 
-        sexo = "Masculino"
-    elif re.search(r'\b(femenino|mujer)\b', texto_low): 
-        sexo = "Femenino"
-
     nombre_clean = filename.rsplit('.', 1)[0].replace("_", " ").replace("-", " ").title()
     match_nombre = re.search(r'(?:nombre(?:\s+candidato)?|candidato)\s*[:|\n\r\-]\s*([a-záéíóúñÁÉÍÓÚÑ\s]{3,40})', texto_cv, re.IGNORECASE)
     if match_nombre:
@@ -211,19 +151,21 @@ def extraer_datos_cv_ia(file_bytes: bytes, texto_cv: str, filename: str) -> dict
     elif any(k in texto_low for k in ["chofer", "conductor", "operador"]): puesto_sugerido = "Chofer / Conductor"
     elif any(k in texto_low for k in ["almacen", "inventario", "montacargas"]): puesto_sugerido = "Auxiliar de Almacén"
 
-    lineas = [l.strip() for l in texto_cv.split("\n") if len(l.strip())> 15 and "<</" not in l]
-    exp_resumen = " ".join(lineas[:4]) if lineas else "Trayectoria no especificada en formato legible."
+    # El resumen local toma exclusivamente secciones profesionales identificadas.
+    from servicios.perfil_laboral import limpiar_texto_laboral
+    lineas = [l.strip() for l in limpiar_texto_laboral(texto_cv).splitlines() if len(l.strip()) > 15 and "<</" not in l]
+    exp_resumen = " ".join(lineas[:4]) if lineas else ""
     
     return {
         "nombre": nombre_clean,
-        "edad": edad,
-        "sexo": sexo,
+        "edad": "No especificada",
+        "sexo": "No especificado",
         "email": email,
         "telefono": telefono,
         "perfil_destacado": puesto_sugerido,
         "desempeno": "Pendiente de evaluación",
         "experiencia": exp_resumen[:1000],
-        "skills": ", ".join(__import__('parser').extraer_skills(texto_cv)),
+        "skills": ", ".join(extraer_skills(texto_cv)),
         "puntos_fuertes": "Sin evidencias suficientes para resumir fortalezas; revisar CV.",
     }
 
@@ -240,6 +182,9 @@ async def cargar_cvs_al_pool(files: List[UploadFile] = File(...), db: Session = 
     for f in files:
         try:
             contenido = await f.read()
+            extension = (f.filename or "").rsplit(".", 1)[-1].lower()
+            if extension not in {"pdf", "docx", "txt", "png", "jpg", "jpeg", "webp"}:
+                raise ValueError("Formato no admitido: usa PDF, DOCX, TXT o imagen; convierte .doc a .docx")
             if len(contenido) > 15 * 1024 * 1024:
                 raise ValueError("El archivo supera el límite de 15 MB")
             texto_cv = extraer_texto_multiformato(f.filename, contenido)
@@ -261,15 +206,15 @@ async def cargar_cvs_al_pool(files: List[UploadFile] = File(...), db: Session = 
             candidato = database.Candidato(
                 nombre_archivo=f.filename[:255],
                 nombre=datos.get("nombre", "Desconocido")[:100],
-                edad=str(datos.get("edad", "No especificada"))[:50],
-                sexo=datos.get("sexo", "No especificado")[:50],
+                edad="No especificada",
+                sexo="No especificado",
                 email=email_extraido,
                 telefono=datos.get("telefono", "No contiene número")[:50],
                 perfil_destacado=datos.get("perfil_destacado", "Perfil Operativo")[:100],
-                desempeno=datos.get("desempeno", "Calificado")[:50],
+                desempeno="Pendiente de evaluación",
                 experiencia=experiencia_limpia,
-                skills=datos.get("skills", "Adaptabilidad"),
-                puntos_fuertes=datos.get("puntos_fuertes", "Disposición laboral"),
+                skills=datos.get("skills") or "",
+                puntos_fuertes=datos.get("puntos_fuertes") or "",
                 texto_completo=texto_cv[:10000] if texto_cv else "Procesado visualmente",
             )
             
@@ -578,17 +523,40 @@ def generar_ranking_vacante(vacante_id: int, db: Session = Depends(database.get_
     descripcion = (vacante.descripcion or "").strip()
     if not descripcion:
         raise HTTPException(status_code=422, detail="La vacante necesita una descripción")
+    texto_vacante = texto_laboral_vacante(vacante.titulo, descripcion)
+    if len(texto_vacante.strip()) < 15:
+        raise HTTPException(status_code=422, detail="La vacante debe contener requisitos laborales válidos")
+
     candidatos = db.query(database.Candidato).all()
-    validos = [c for c in candidatos if (c.texto_completo or "").strip() and c.texto_completo != "Procesado visualmente"]
-    if not validos:
-        return {"mensaje": "No hay candidatos con texto de CV extraído para evaluar", "evaluados": 0, "ranking": []}
+    entradas = [(c, texto_laboral_candidato(c)) for c in candidatos]
+    validos = [(c, texto) for c, texto in entradas if texto]
+    omitidos = len(entradas) - len(validos)
+
     try:
+        # Retira únicamente rankings obsoletos de esta vacante; no borra CV.
+        ids_validos = {c.id for c, _ in validos}
+        existentes = db.query(database.Evaluacion).filter_by(vacante_id=vacante_id).all()
+        for evaluacion in existentes:
+            if evaluacion.candidato_id not in ids_validos:
+                db.delete(evaluacion)
+
+        if not validos:
+            db.commit()
+            return {
+                "mensaje": "No hay perfiles con experiencia o habilidades laborales suficientes para evaluar",
+                "evaluados": 0, "omitidos_sin_perfil": omitidos,
+                "omitidos_sin_texto": omitidos, "ranking": [],
+            }
+
         scores = calcular_similitud_semantica_lote(
-            f"{vacante.titulo or ''}. {descripcion}", [c.texto_completo for c in validos]
+            texto_vacante, [texto for _, texto in validos]
         )
-        for candidato, score in zip(validos, scores):
+        if len(scores) != len(validos):
+            raise ValueError("El motor devolvió un número incorrecto de puntuaciones")
+
+        for (candidato, texto_profesional), score in zip(validos, scores):
             score = round(max(0.0, min(100.0, float(score))), 2)
-            resumen, justificacion = generar_resumen_y_fit(candidato.texto_completo, descripcion, score)
+            resumen, justificacion = generar_resumen_y_fit(texto_profesional, texto_vacante, score)
             evaluacion = db.query(database.Evaluacion).filter_by(
                 vacante_id=vacante_id, candidato_id=candidato.id
             ).first()
@@ -601,10 +569,14 @@ def generar_ranking_vacante(vacante_id: int, db: Session = Depends(database.get_
         db.commit()
     except Exception as exc:
         db.rollback()
-        raise HTTPException(status_code=500, detail=f"Falló la evaluación semántica: {exc}") from exc
-    return {"mensaje": "Evaluación semántica completada; resultados orientativos sujetos a revisión humana",
-            "evaluados": len(validos), "omitidos_sin_texto": len(candidatos) - len(validos),
-            "ranking": obtener_ranking(vacante_id, db)}
+        raise HTTPException(status_code=500, detail=f"Falló la evaluación semántica: {type(exc).__name__}") from exc
+    return {
+        "mensaje": "Similitud laboral calculada; resultados orientativos sujetos a revisión humana",
+        "evaluados": len(validos),
+        "omitidos_sin_perfil": omitidos,
+        "omitidos_sin_texto": omitidos,  # Clave histórica para compatibilidad con interfaz.
+        "ranking": obtener_ranking(vacante_id, db),
+    }
 
 
 # --- GESTIÓN DE ETAPAS, EDICIÓN Y CANCELACIÓN (CurriculAi 3.1) ---

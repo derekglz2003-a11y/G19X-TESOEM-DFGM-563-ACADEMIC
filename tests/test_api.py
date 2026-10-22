@@ -207,3 +207,126 @@ def test_generador_de_env_preserva_configuracion_existente():
     assert "ADMIN_API_KEY=NuevaClave" in nuevo
     assert "ADMIN_API_KEY=antigua" not in nuevo
     assert nuevo.count("ADMIN_PASSWORD_HASH=") == 1
+
+
+def test_ranking_solo_informacion_laboral_y_no_usa_edad_sexo(sistema, monkeypatch):
+    """El vector no recibe campos privados ni el CV íntegro; cambios demográficos no alteran el resultado."""
+    from main import calcular_similitud_semantica_lote  # noqa: F401
+    import main
+    client, dbm = sistema
+    captura = []
+
+    def vector_simulado(vacante, textos):
+        captura.append((vacante, list(textos)))
+        return [72.0 for _ in textos]
+
+    monkeypatch.setattr(main, "calcular_similitud_semantica_lote", vector_simulado)
+    with dbm.SessionLocal() as db:
+        c = dbm.Candidato(
+            nombre="Nombre Reservado", edad="24", sexo="Femenino", email="privado@example.test",
+            telefono="5512345678", perfil_destacado="Analista de datos",
+            experiencia="Experiencia en SQL, Python y tableros Power BI",
+            skills="SQL, Python, Power BI",
+            texto_completo="Nombre Reservado, edad 24, sexo femenino, privado@example.test, dirección secreta",
+        )
+        db.add(c)
+        db.commit()
+        cid = c.id
+    r = client.post("/api/v1/vacantes", data={
+        "titulo": "Analista de datos", "descripcion": "SQL, Python, tableros Power BI",
+    })
+    vid = r.json()["id"]
+    r = client.post(f"/api/v1/evaluar/{vid}")
+    assert r.status_code == 200, r.text
+    assert r.json()["evaluados"] == 1
+    _, perfiles = captura[-1]
+    enviado = perfiles[0]
+    for prohibido in ("Reservado", "24", "Femenino", "privado@example.test", "5512345678", "secreta"):
+        assert prohibido not in enviado
+    assert "Python" in enviado and "SQL" in enviado
+
+    with dbm.SessionLocal() as db:
+        c = db.get(dbm.Candidato, cid)
+        c.nombre = "Otra Persona"
+        c.edad = "61"
+        c.sexo = "Masculino"
+        c.email = "otro@example.test"
+        c.texto_completo = "Perfil completamente distinto con información personal irrelevante"
+        db.commit()
+    r = client.post(f"/api/v1/evaluar/{vid}")
+    assert r.status_code == 200
+    assert captura[-1][1] == captura[-2][1]
+    assert client.get(f"/api/v1/ranking/{vid}").json()[0]["score_similitud"] == 72.0
+    assert client.delete("/api/v1/limpiar-pool").status_code == 200
+    assert client.delete(f"/api/v1/vacantes/{vid}").status_code == 200
+
+
+def test_ranking_omite_perfil_generico_y_no_crea_puntaje_falso(sistema):
+    client, dbm = sistema
+    with dbm.SessionLocal() as db:
+        db.add(dbm.Candidato(
+            nombre="Persona sin perfil", edad="30", sexo="No especificado",
+            perfil_destacado="Perfil Operativo", skills="Compromiso, Responsabilidad, Adaptabilidad",
+            experiencia="Trayectoria no especificada en formato legible.",
+            texto_completo="Hay texto extraído, pero no hay evidencia laboral en los campos profesionales",
+        ))
+        db.commit()
+    v = client.post("/api/v1/vacantes", data={"titulo": "Auxiliar", "descripcion": "Limpieza de oficinas, uso de productos de limpieza"})
+    vid = v.json()["id"]
+    r = client.post(f"/api/v1/evaluar/{vid}")
+    assert r.status_code == 200, r.text
+    assert r.json()["evaluados"] == 0
+    assert r.json()["omitidos_sin_perfil"] == 1
+    assert client.get(f"/api/v1/ranking/{vid}").json() == []
+    assert client.delete("/api/v1/limpiar-pool").status_code == 200
+    assert client.delete(f"/api/v1/vacantes/{vid}").status_code == 200
+
+
+def test_importacion_docx_y_doc_heredado(sistema):
+    from io import BytesIO
+    from docx import Document
+
+    client, _ = sistema
+    documento = Document()
+    documento.add_paragraph("Nombre: Perfil Prueba")
+    documento.add_paragraph("Experiencia laboral con Excel, SQL y facturacion de servicios empresariales.")
+    archivo = BytesIO()
+    documento.save(archivo)
+    r = client.post("/api/v1/analizar-cvs-masivo", files=[(
+        "files", ("perfil.docx", archivo.getvalue(),
+                  "application/vnd.openxmlformats-officedocument.wordprocessingml.document")
+    )])
+    assert r.status_code == 200, r.text
+    assert "1 candidato" in r.json()["mensaje"]
+    r = client.post("/api/v1/analizar-cvs-masivo", files=[(
+        "files", ("perfil_antiguo.doc", b"contenido de prueba no valido", "application/msword")
+    )])
+    assert r.status_code == 200
+    assert "perfil_antiguo.doc" in r.json()["mensaje"]
+    assert len(client.get("/api/v1/candidatos").json()) == 1
+    assert client.delete("/api/v1/limpiar-pool").status_code == 200
+
+
+def test_eliminacion_de_ranking_obsoleto_por_perfil_invalido(sistema):
+    client, dbm = sistema
+    with dbm.SessionLocal() as db:
+        c = dbm.Candidato(nombre="Persona con CV", perfil_destacado="Analista financiero",
+                          experiencia="Análisis de estados financieros y conciliación bancaria",
+                          skills="Excel, contabilidad")
+        db.add(c)
+        db.commit()
+        cid = c.id
+    vid = client.post("/api/v1/vacantes", data={"titulo": "Contador", "descripcion": "Contabilidad y Excel"}).json()["id"]
+    assert client.post(f"/api/v1/evaluar/{vid}").json()["evaluados"] == 1
+    with dbm.SessionLocal() as db:
+        c = db.get(dbm.Candidato, cid)
+        c.perfil_destacado = "Perfil Operativo"
+        c.experiencia = ""
+        c.skills = ""
+        db.commit()
+    r = client.post(f"/api/v1/evaluar/{vid}")
+    assert r.status_code == 200
+    assert r.json()["evaluados"] == 0
+    assert client.get(f"/api/v1/ranking/{vid}").json() == []
+    assert client.delete("/api/v1/limpiar-pool").status_code == 200
+    assert client.delete(f"/api/v1/vacantes/{vid}").status_code == 200

@@ -40,8 +40,9 @@ def render(ctx):
             if r is not None and r.ok:
                 data = r.json()
                 st.success(f"Evaluación terminada: {data.get('evaluados', 0)} CV procesados.")
-                if data.get("omitidos_sin_texto"):
-                    st.warning(f"{data['omitidos_sin_texto']} CV no pudieron evaluarse por falta de texto utilizable.")
+                omitidos = data.get("omitidos_sin_perfil", data.get("omitidos_sin_texto", 0))
+                if omitidos:
+                    st.warning(f"{omitidos} perfiles no tienen información profesional suficiente para un cálculo orientativo. Revisa o edita sus expedientes.")
             else:
                 st.error(_err(r))
     with c2:
