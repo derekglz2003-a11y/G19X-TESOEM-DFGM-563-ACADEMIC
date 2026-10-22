@@ -46,9 +46,10 @@ def crear_vacante():
     if st.session_state.pop("reset_nueva_vac", False):
         for k in ("vacante_titulo", "vacante_descripcion", "vacante_necesidades"):
             st.session_state.pop(k, None)
-    if "desc_generada_tmp" in st.session_state:
+    descripcion_recien_generada = "desc_generada_tmp" in st.session_state
+    if descripcion_recien_generada:
         st.session_state["vacante_descripcion"] = st.session_state.pop("desc_generada_tmp")
-    with st.expander("+ Crear nueva vacante", expanded=False):
+    with st.expander("+ Crear nueva vacante", expanded=descripcion_recien_generada):
         st.caption("Escribe el puesto y, si quieres, deja que la IA estructure la descripción automáticamente.")
         c1, c2 = st.columns([1.15, 1], gap="large")
         with c1:
@@ -81,8 +82,16 @@ def crear_vacante():
                             },
                         )
                     if r is not None and r.ok:
-                        st.session_state["desc_generada_tmp"] = r.json().get("descripcion", "")
-                        _flash("La descripción se estructuró con IA. Revísala y guárdala.")
+                        resultado = r.json()
+                        propuesta = resultado.get("descripcion", "")
+                        if propuesta:
+                            st.session_state["desc_generada_tmp"] = propuesta
+                            mensaje = "La descripción apareció en el formulario. Revísala y pulsa Guardar nueva vacante."
+                            if resultado.get("criterios_omitidos"):
+                                mensaje += " Se omitieron criterios de sexo, edad o apariencia."
+                            _flash(mensaje)
+                        else:
+                            st.error("Gemini respondió sin una descripción de puesto.")
                     else:
                         st.error(_error(r))
             if st.button("Guardar nueva vacante", key="vacante_guardar", type="primary", use_container_width=True):

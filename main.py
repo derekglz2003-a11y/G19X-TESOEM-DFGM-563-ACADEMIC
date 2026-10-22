@@ -77,56 +77,13 @@ class EntrevistaEstadoUpdate(BaseModel):
 def extraer_datos_cv_ia(file_bytes: bytes, texto_cv: str, filename: str) -> dict:
     api_key_gemini = os.getenv("GEMINI_API_KEY")
     if api_key_gemini:
+        from servicios.gemini_ia import ErrorGemini, extraer_datos_cv_gemini
         try:
-            import google.generativeai as genai
-            genai.configure(api_key=api_key_gemini)
-            
-            model = genai.GenerativeModel(
-                os.getenv("GEMINI_MODEL", "gemini-2.0-flash"),
-                generation_config={"response_mime_type": "application/json"}
-            )
-
-            ext = filename.split(".")[-1].lower()
-            content = []
-            
-            if ext in ["pdf", "png", "jpg", "jpeg", "webp"]:
-                mime_type = "application/pdf" if ext == "pdf" else f"image/{'jpeg' if ext == 'jpg' else ext}"
-                content.append({
-                    "mime_type": mime_type,
-                    "data": file_bytes
-                })
-            else:
-                content.append(f"Texto del Expediente:\n{texto_cv[:10000]}")
-
-            prompt = """
-            Eres un extractor de datos de CVs riguroso y exacto. Analiza el siguiente expediente y extrae los datos en JSON.
-
-            REGLAS STRICTAS:
-            - Si NO hay número de teléfono válido, coloca exactamente: "No contiene número".
-            - Si NO hay correo electrónico, coloca exactamente: "No contiene correo".
-            - Extrae el nombre real del candidato.
-            - NUNCA extraigas código, números de serie, ni texto basura como '<</Type...'.
-            - NO extraigas ni infieras edad, sexo, género u otras características protegidas.
-            - En habilidades y experiencia, incluye solo información verificable en el CV.
-
-            Estructura JSON requerida:
-            {
-              "nombre": "Nombre completo",
-              "email": "Correo o 'No contiene correo'",
-              "telefono": "Teléfono a 10 dígitos o 'No contiene número'",
-              "perfil_destacado": "Puesto o área detectada",
-              "desempeno": "Pendiente de evaluación",
-              "experiencia": "Resumen limpio de su experiencia laboral. Máximo 2 párrafos. Cero código basura.",
-              "skills": "Habilidades clave separadas por coma",
-              "puntos_fuertes": "Fortalezas reales (Usa viñetas •)"
-            }
-            """
-            content.append(prompt)
-            
-            res = model.generate_content(content)
-            return json.loads(res.text)
-        except Exception as e:
-            print(f"[Gemini] Falló el extractor ({type(e).__name__}); usando modo local.")
+            return extraer_datos_cv_gemini(file_bytes, texto_cv, filename)
+        except ErrorGemini as exc:
+            # En la carga de CV se conserva el extractor local como respaldo;
+            # la descripción de vacantes nunca simula una respuesta de IA.
+            print(f"[Gemini] Extracción no disponible ({exc.status_code}); usando modo local.")
 
     # 2. Extractor local cuando el modelo generativo no está configurado.
     # No inventar habilidades ni calificar al candidato sin evidencia.
@@ -330,25 +287,12 @@ def generar_descripcion_puesto(req: GenerarDescripcionRequest):
     """Genera una descripción mediante Gemini; no presenta plantillas como IA."""
     if not req.titulo.strip():
         raise HTTPException(status_code=422, detail="Indica el título del puesto")
-    key = os.getenv("GEMINI_API_KEY", "").strip()
-    if not key:
-        raise HTTPException(status_code=503, detail="Configura GEMINI_API_KEY en .env")
+    from servicios.gemini_ia import ErrorGemini, generar_descripcion_puesto as crear_descripcion
     try:
-        import google.generativeai as genai
-        genai.configure(api_key=key)
-        model = genai.GenerativeModel(os.getenv("GEMINI_MODEL", "gemini-2.0-flash"))
-        prompt = ("Redacta en español una descripción profesional de vacante con objetivo, "
-                  "responsabilidades, requisitos y habilidades. No inventes sueldo, prestaciones "
-                  "ni requisitos discriminatorios. Usa solo los datos suministrados. "
-                  f"Puesto: {req.titulo[:150]}\nContexto: {req.contexto[:2000]}\n"
-                  f"Descripción inicial: {req.descripcion[:3000]}")
-        respuesta = model.generate_content(prompt)
-        texto = (getattr(respuesta, "text", None) or "").strip()
-        if not texto:
-            raise ValueError("Gemini no devolvió contenido")
-        return {"descripcion": texto}
-    except Exception as exc:
-        raise HTTPException(status_code=502, detail=f"No fue posible generar la descripción con Gemini: {exc}") from exc
+        return crear_descripcion(req.titulo, req.contexto, req.descripcion)
+    except ErrorGemini as exc:
+        raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
+
 
 @app.get("/api/v1/vacantes", response_model=List[VacanteResponse])
 def listar_vacantes(db: Session = Depends(database.get_db)):

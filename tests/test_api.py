@@ -330,3 +330,24 @@ def test_eliminacion_de_ranking_obsoleto_por_perfil_invalido(sistema):
     assert client.get(f"/api/v1/ranking/{vid}").json() == []
     assert client.delete("/api/v1/limpiar-pool").status_code == 200
     assert client.delete(f"/api/v1/vacantes/{vid}").status_code == 200
+
+
+def test_endpoint_descripcion_gemini_regresa_texto_editable(sistema, monkeypatch):
+    client, _ = sistema
+    from servicios import gemini_ia
+    from unittest.mock import Mock
+
+    def creador(titulo, contexto, descripcion):
+        assert titulo == "Auxiliar de oficina"
+        assert contexto == "Preparatoria, 3 años de experiencia"
+        return {"descripcion": "OBJETIVO DEL PUESTO\nApoyo administrativo.",
+                "criterios_omitidos": False, "modelo": "gemini-3.8-flash"}
+
+    monkeypatch.setattr(gemini_ia, "generar_descripcion_puesto", Mock(side_effect=creador))
+    resp = client.post("/api/v1/generar-descripcion", json={
+        "titulo": "Auxiliar de oficina", "contexto": "Preparatoria, 3 años de experiencia",
+        "descripcion": "",
+    })
+    assert resp.status_code == 200
+    assert "OBJETIVO DEL PUESTO" in resp.json()["descripcion"]
+    assert resp.json()["criterios_omitidos"] is False
