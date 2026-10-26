@@ -3,7 +3,7 @@ from html import escape
 import math
 import streamlit as st
 
-from servicios.api import api_get, api_post, api_post_form, api_put, api_delete
+from servicios.api import api_get, api_get_respuesta, api_post, api_post_form, api_put, api_delete
 from servicios.whatsapp import enviar_invitacion_entrevista
 
 ESTADOS = ["En revisión", "Preseleccionado", "Descartado", "Entrevista", "Finalista", "Aceptado", "Rechazado"]
@@ -127,7 +127,19 @@ def tarjeta_vacante(v):
 
 def panel_vacante(v, candidatos, entrevistas):
     vid = v.get("id")
-    ranking = api_get(f"/api/v1/ranking/{vid}", [])
+    respuesta_ranking = api_get_respuesta(f"/api/v1/ranking/{vid}")
+    if respuesta_ranking is None:
+        st.error("No fue posible conectar con el backend para consultar el ranking.")
+        ranking = []
+    elif not respuesta_ranking.ok:
+        st.error(f"Error al consultar el ranking (HTTP {respuesta_ranking.status_code}). Revisa FastAPI; no significa que no haya candidatos.")
+        ranking = []
+    else:
+        try:
+            ranking = respuesta_ranking.json()
+        except ValueError:
+            st.error("El servidor devolvió un ranking inválido.")
+            ranking = []
     ranking = ranking if isinstance(ranking, list) else []
     scores = {str(r.get("candidato_id")): r for r in ranking}
     seguimientos = api_get(f"/api/v1/seguimientos?vacante_id={vid}", [])

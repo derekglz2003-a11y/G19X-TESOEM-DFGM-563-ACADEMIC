@@ -351,3 +351,45 @@ def test_endpoint_descripcion_gemini_regresa_texto_editable(sistema, monkeypatch
     assert resp.status_code == 200
     assert "OBJETIVO DEL PUESTO" in resp.json()["descripcion"]
     assert resp.json()["criterios_omitidos"] is False
+
+
+def test_error_de_bd_en_ranking_devuelve_500_no_lista_vacia(sistema):
+    """Si la BD cae no confundimos el incidente con cero candidatos."""
+    from fastapi import HTTPException
+    from main import obtener_ranking
+    class BaseRota:
+        def query(self, *_args):
+            raise RuntimeError("Falla simulada de conexión a la BD")
+    with pytest.raises(HTTPException) as error:
+        obtener_ranking(12345, BaseRota())
+    assert error.value.status_code == 500
+    assert "No se pudo consultar el ranking" in error.value.detail
+    assert "simulada" not in error.value.detail
+
+
+def test_bitacora_whatsapp_valida_tipos_con_pydantic(sistema):
+    """El contrato de mensajes protege de registros con tipos inconsistentes."""
+    cliente, _db = sistema
+    payload = {"telefono": "525512345678", "mensaje": "Confirmación ficticia", "estado": "Pendiente"}
+    r = cliente.post("/api/v1/mensajes-whatsapp", json=payload)
+    assert r.status_code == 200, r.text
+    invalido = {**payload, "entrevista_id": "esto-no-es-un-identificador"}
+    respuesta = cliente.post("/api/v1/mensajes-whatsapp", json=invalido)
+    assert respuesta.status_code == 422
+
+
+def test_cliente_api_preserva_estado_500_para_mostrarlo_en_ui(monkeypatch):
+    """La interfaz puede distinguir HTTP 500 de una lista vacía."""
+    from servicios import api
+    class RespuestaRota:
+        status_code = 500
+        ok = False
+    def llamada(url, headers, timeout):
+        assert url.endswith("/api/v1/ranking/15")
+        assert timeout == 8
+        return RespuestaRota()
+    monkeypatch.setattr(api.requests, "get", llamada)
+    r = api.api_get_respuesta("/api/v1/ranking/15")
+    assert r is not None
+    assert r.status_code == 500
+    assert r.ok is False

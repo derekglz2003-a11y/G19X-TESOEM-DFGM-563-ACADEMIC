@@ -1,6 +1,6 @@
 import math
 import streamlit as st
-from servicios.api import api_get, api_post
+from servicios.api import api_get_respuesta, api_post
 from servicios.ui_helpers import seguro
 
 
@@ -52,7 +52,18 @@ def render(ctx):
             if callable(navegar):
                 navegar("Vacantes")
 
-    ranking = api_get(f"/api/v1/ranking/{vid}", [])
+    respuesta_ranking = api_get_respuesta(f"/api/v1/ranking/{vid}")
+    if respuesta_ranking is None:
+        st.error("No se pudo conectar al backend para consultar el ranking.")
+        return
+    if not respuesta_ranking.ok:
+        st.error(f"No fue posible consultar el ranking (HTTP {respuesta_ranking.status_code}). Revisa FastAPI.")
+        return
+    try:
+        ranking = respuesta_ranking.json()
+    except ValueError:
+        st.error("El servidor devolvió una respuesta inválida al consultar el ranking.")
+        return
     ranking = ranking if isinstance(ranking, list) else []
     if not ranking:
         st.info("Aún no hay resultados. Ejecuta primero la evaluación con IA.")

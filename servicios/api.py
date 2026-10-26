@@ -23,6 +23,17 @@ def api_estado():
         return None
 
 
+def api_get_respuesta(path):
+    """Devuelve la respuesta HTTP para distinguir un ranking vacío de un error 500.
+
+    Solo se usa donde la UI necesita mostrar el error en lugar de ocultarlo.
+    """
+    try:
+        return requests.get(f"{API_URL}{path}", headers=_cabeceras(), timeout=8)
+    except requests.RequestException:
+        return None
+
+
 def api_get(path, default=None):
     try:
         r = requests.get(f"{API_URL}{path}", headers=_cabeceras(), timeout=8)

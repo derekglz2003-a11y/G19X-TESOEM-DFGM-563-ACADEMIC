@@ -12,6 +12,10 @@ from servicios.extractores_cv import extraer_texto_multiformato, limpiar_texto_p
 import re
 import json
 import os
+import logging
+from typing import Any
+
+logger = logging.getLogger(__name__)
 
 from dotenv import load_dotenv
 load_dotenv()
@@ -37,7 +41,7 @@ def exigir_administrador(clave: Optional[str] = Depends(clave_encabezado)):
 
 app = FastAPI(
     title="CurriculAi API - Optimizador de Filtrado Curricular",
-    version="3.5.0",
+    version="3.8.0",
     dependencies=[Depends(exigir_administrador)],
 )
 
@@ -57,6 +61,18 @@ class GenerarDescripcionRequest(BaseModel):
     titulo: str
     contexto: str = ""
     descripcion: str = ""
+
+
+class MensajeWhatsAppCreate(BaseModel):
+    """Validación explícita de la bitácora (compatible con el cliente anterior)."""
+    candidato_id: Optional[int] = None
+    entrevista_id: Optional[int] = None
+    telefono: str = ""
+    mensaje: str = ""
+    estado: str = "Pendiente"
+    proveedor: str = "UltraMsg"
+    detalle: str = ""
+    respuesta: Any = None
 
 class EntrevistaCreate(BaseModel):
     vacante_id: Optional[int] = None
@@ -302,8 +318,12 @@ def listar_vacantes(db: Session = Depends(database.get_db)):
 def crear_vacante(titulo: str = Form(...), descripcion: str = Form(...), db: Session = Depends(database.get_db)):
     vacante = database.Vacante(titulo=titulo, descripcion=descripcion)
     db.add(vacante)
-    db.commit()
-    db.refresh(vacante)
+    try:
+        db.commit()
+        db.refresh(vacante)
+    except Exception as exc:
+        db.rollback()
+        raise HTTPException(status_code=500, detail="No se pudo crear la vacante") from exc
     return vacante
 
 @app.put("/api/v1/vacantes/{vacante_id}", response_model=VacanteResponse)
@@ -315,8 +335,12 @@ def editar_vacante(vacante_id: int, req: VacanteUpdate, db: Session = Depends(da
         raise HTTPException(status_code=422, detail="El título y la descripción son obligatorios")
     vacante.titulo = req.titulo.strip()
     vacante.descripcion = req.descripcion.strip()
-    db.commit()
-    db.refresh(vacante)
+    try:
+        db.commit()
+        db.refresh(vacante)
+    except Exception as exc:
+        db.rollback()
+        raise HTTPException(status_code=500, detail="No se pudo actualizar la vacante") from exc
     return vacante
 
 
@@ -325,10 +349,14 @@ def eliminar_vacante(vacante_id: int, db: Session = Depends(database.get_db)):
     vacante = db.query(database.Vacante).filter(database.Vacante.id == vacante_id).first()
     if not vacante:
         raise HTTPException(status_code=404, detail="Vacante no encontrada")
-    db.query(database.EntrevistaVacante).filter_by(vacante_id=vacante_id).delete(synchronize_session=False)
-    db.query(database.Seguimiento).filter_by(vacante_id=vacante_id).delete(synchronize_session=False)
-    db.delete(vacante)
-    db.commit()
+    try:
+        db.query(database.EntrevistaVacante).filter_by(vacante_id=vacante_id).delete(synchronize_session=False)
+        db.query(database.Seguimiento).filter_by(vacante_id=vacante_id).delete(synchronize_session=False)
+        db.delete(vacante)
+        db.commit()
+    except Exception as exc:
+        db.rollback()
+        raise HTTPException(status_code=500, detail="No se pudo eliminar la vacante") from exc
     return {"mensaje": "Vacante eliminada"}
 @app.get("/api/v1/ranking/{vacante_id}")
 def obtener_ranking(vacante_id: int, db: Session = Depends(database.get_db)):
@@ -355,12 +383,15 @@ def obtener_ranking(vacante_id: int, db: Session = Depends(database.get_db)):
                 })
         return resultado
         
-    except Exception as e:
-        print(f"🔴 ERROR AL OBTENER RANKING: {e}")
-        return []
+    except Exception as exc:
+        # No fingir ausencia de resultados ante una falla de base de datos.
+        # Nunca devolver detalles internos de SQL ni información personal al cliente.
+        logger.exception("Falló la consulta del ranking de la vacante %s", vacante_id)
+        raise HTTPException(status_code=500, detail="No se pudo consultar el ranking. Intenta nuevamente o revisa el backend.") from exc
 
 @app.post("/api/v1/mensajes-whatsapp")
-def registrar_mensaje_whatsapp(payload: dict, db: Session = Depends(database.get_db)):
+def registrar_mensaje_whatsapp(payload: MensajeWhatsAppCreate, db: Session = Depends(database.get_db)):
+    payload = payload.model_dump()
     try:
         registro = database.MensajeWhatsApp(
             candidato_id=payload.get("candidato_id"),
@@ -452,9 +483,15 @@ def actualizar_estado_entrevista(entrevista_id: int, req: EntrevistaEstadoUpdate
     entrevista = db.query(database.Entrevista).filter(database.Entrevista.id == entrevista_id).first()
     if not entrevista:
         raise HTTPException(status_code=404, detail="Entrevista no encontrada")
+    if req.estado not in {"Programada", "Confirmada", "Realizada", "Cancelada", "No asistió", "En evaluación", "Finalista", "Aceptado", "Rechazado"}:
+        raise HTTPException(status_code=422, detail="Estado de entrevista no permitido")
     entrevista.estado = req.estado
     entrevista.tipo_finalista = req.tipo_finalista or ""
-    db.commit()
+    try:
+        db.commit()
+    except Exception as exc:
+        db.rollback()
+        raise HTTPException(status_code=500, detail="No se pudo actualizar el estado de la entrevista") from exc
     return {"mensaje": "Estado actualizado"}
 
 @app.post("/api/v1/evaluar/{vacante_id}")
@@ -616,7 +653,11 @@ def editar_entrevista(entrevista_id: int, req: EntrevistaUpdate,
     entrevista.fecha = req.fecha
     entrevista.hora = req.hora
     entrevista.lugar = req.lugar.strip()[:500]
-    db.commit()
+    try:
+        db.commit()
+    except Exception as exc:
+        db.rollback()
+        raise HTTPException(status_code=500, detail="No se pudo actualizar la entrevista") from exc
     return {"mensaje": "Entrevista actualizada"}
 
 @app.delete("/api/v1/entrevistas/{entrevista_id}")
@@ -631,10 +672,14 @@ def borrar_entrevista(entrevista_id: int, db: Session = Depends(database.get_db)
         ).first()
         if seguimiento is not None and seguimiento.estado in ("Entrevista", "Finalista", "Aceptado", "Rechazado"):
             seguimiento.estado = "En revisión"
-    db.query(database.MensajeEntrevista).filter_by(entrevista_id=entrevista_id).delete(synchronize_session=False)
-    db.query(database.EntrevistaVacante).filter_by(entrevista_id=entrevista_id).delete(synchronize_session=False)
-    db.delete(entrevista)
-    db.commit()
+    try:
+        db.query(database.MensajeEntrevista).filter_by(entrevista_id=entrevista_id).delete(synchronize_session=False)
+        db.query(database.EntrevistaVacante).filter_by(entrevista_id=entrevista_id).delete(synchronize_session=False)
+        db.delete(entrevista)
+        db.commit()
+    except Exception as exc:
+        db.rollback()
+        raise HTTPException(status_code=500, detail="No se pudo eliminar la entrevista") from exc
     return {"mensaje": "Entrevista eliminada; el candidato se conserva"}
 
 @app.put("/api/v1/entrevistas/{entrevista_id}/decision")
@@ -660,5 +705,9 @@ def decidir_entrevista(entrevista_id: int, req: EntrevistaEstadoUpdate,
                 seguimiento = database.Seguimiento(vacante_id=vinculo.vacante_id, candidato_id=entrevista.candidato_id)
                 db.add(seguimiento)
             seguimiento.estado = etapa
-    db.commit()
+    try:
+        db.commit()
+    except Exception as exc:
+        db.rollback()
+        raise HTTPException(status_code=500, detail="No se pudo guardar la decisión") from exc
     return {"mensaje": "Decisión guardada", "estado": entrevista.estado}
