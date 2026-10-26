@@ -55,7 +55,7 @@ Las metas siguientes son **criterios para evaluar el MVP, no métricas de rendim
 | OBJ-02 | Asegurar una extracción controlada de documentos | Obtener texto laboral utilizable en **al menos 18 de 20** CV ficticios legibles de los formatos admitidos; registrar por separado casos de OCR | Dataset de prueba definido, revisión manual de texto extraído y registro de errores; **meta, no resultado** |
 | OBJ-03 | Mantener resultados explicables y evitar influencia directa de atributos protegidos | En **100 %** de las pruebas de insumo del motor, excluir campos administrativos explícitos (nombre, edad, sexo, teléfono, correo y CV íntegro) y presentar justificación/omitidos | Pruebas del módulo `servicios/perfil_laboral.py`, inspección del ranking y revisión humana |
 | OBJ-04 | Verificar controles de acceso | **100 %** de las rutas operativas probadas sin clave válida deben denegar acceso y **0** secretos reales deben figurar en Git | Pruebas negativas de API, búsqueda de secretos y `git status` / `.gitignore` |
-| OBJ-05 | Demostrar reproducibilidad técnica | Una instalación limpia con instrucciones debe ejecutar el sistema y completar **19/19 pruebas automatizadas existentes**, o documentar las diferencias de entorno | Ejecución de `pytest`, evidencia del entorno, README e informe de instalación |
+| OBJ-05 | Demostrar reproducibilidad técnica | Una instalación limpia con instrucciones debe ejecutar el sistema y completar **la totalidad de las pruebas automatizadas del repositorio** (27 incluidas en el corte 3.8), o documentar las diferencias de entorno | Ejecución de `pytest`, evidencia del entorno, README e informe de instalación |
 
 **Pendientes de medición:** tiempos reales de análisis, pertinencia de resultados, tasa de errores de OCR con Tesseract real, eficacia de las recomendaciones, latencia de servicios externos, seguridad en despliegue público y pruebas de sesgos. No deben presentarse como aprobados sin evidencia.
 
@@ -117,7 +117,7 @@ Las metas siguientes son **criterios para evaluar el MVP, no métricas de rendim
 | RNF-01 Seguridad | Denegar rutas operativas sin clave válida y evitar secretos en el repositorio | Pruebas negativas de API, revisión de `.env` y `.gitignore` | Protección básica implementada; no implica seguridad de producción |
 | RNF-02 Privacidad | Limitar campos usados por el embedding a perfil, experiencia y habilidades; no compartir CV reales en código o evidencias públicas | Pruebas unitarias, revisión del insumo y repositorio | Medida técnica implementada; anonimización total **no garantizada** |
 | RNF-03 Trazabilidad | Conservar estado por vacante y justificación de evaluaciones | Pruebas API y revisión en UI | Flujo funcional implementado; auditoría de modificaciones completa pendiente |
-| RNF-04 Reproducibilidad | Instalar desde el repositorio y ejecutar pruebas sin una conexión remota real | README, `.env.example` y base aislada | 19 pruebas automatizadas reportadas como aprobadas en el entorno local de desarrollo |
+| RNF-04 Reproducibilidad | Instalar desde el repositorio y ejecutar pruebas sin una conexión remota real | README, `.env.example` y base aislada | 28 pruebas automatizadas aprobadas en una base aislada durante el corte 3.8; falta repetir la instalación desde cero |
 | RNF-05 Usabilidad | Buscar expedientes y vacantes sin recorrer listados extensos; menú usable en escritorio | Pruebas manuales a resolución definida y registro de incidencias | Búsqueda, selección y paginación implementadas; prueba formal de usabilidad pendiente |
 | RNF-06 Resiliencia | Explicar formatos inválidos y fallos de OCR / servicios externos sin fabricar resultados | Pruebas negativas y revisión de mensajes | Manejo parcial implementado; evaluación de errores de producción pendiente |
 | RNF-07 Portabilidad | Ejecutar en Windows con Python 3.11 recomendado, SQLite aislada o PostgreSQL mediante `DATABASE_URL` | Instalación documentada en máquina limpia | Documentado; instalación independiente por evaluar |
@@ -181,7 +181,7 @@ Los casos de aceptación verificables para estas historias están en `MVP.md`.
 
 ## 12. Plan de validación y aceptación
 
-1. Ejecutar `python -m pytest -q tests` en un entorno aislado: **19 pruebas existentes**. Registrar salida, versión de Python y fecha de ejecución.
+1. Ejecutar `python -m pytest -q tests` en un entorno aislado: **28 pruebas disponibles en el corte 3.8**. Registrar salida, versión de Python y fecha de ejecución.
 2. Ejecutar el recorrido manual E2E con una vacante y CV ficticios, **sin utilizar credenciales reales de postulantes**.
 3. Verificar autenticación, lectura prohibida sin clave, edición y eliminaciones solo en datos de prueba.
 4. Ejecutar un escenario con CV profesional válido, uno genérico, uno DOCX con tablas y uno `.doc` heredado; registrar resultado observado.

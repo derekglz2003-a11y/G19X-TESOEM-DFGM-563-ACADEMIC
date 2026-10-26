@@ -61,6 +61,23 @@ Swagger puede abrirse en `http://localhost:8000/docs`, pero **todas las operacio
 
 **Limitaciones de seguridad:** Esta protección es un primer corte para un prototipo académico, **no una solución lista para Internet**. Para producción faltan HTTPS, cuentas individuales, autorización por roles, control de intentos, auditoría, sesiones de mayor seguridad, políticas de retención y despliegue aislado. No subir CV reales, datos personales ni bases de datos al repositorio público.
 
+## CurriculAi 3.5 — perfil laboral y ranking
+
+El ranking usa únicamente `perfil_destacado`, `experiencia` y `skills`. No incluye
+`nombre`, `edad`, `sexo`, contacto ni `texto_completo` en los embeddings. Si
+las fichas heredadas solo tienen valores genéricos, se omiten hasta revisarlas.
+Al evaluar una vacante se actualizan sus evaluaciones y pueden retirarse
+puntuaciones antiguas carentes de evidencia; no se eliminan los candidatos.
+
+Los PDF escaneados pueden requerir OCR (máximo tres páginas en el fallback),
+`.docx` incluye tablas, `.txt` está admitido y `.doc` antiguo no: convértelo
+antes a DOCX o PDF. El motor por defecto sigue siendo
+`sentence-transformers/all-MiniLM-L6-v2`; puedes probar el modelo multilingüe
+estableciendo `EMBEDDINGS_MODEL=sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2`
+en `.env` (descarga inicial y puntuaciones diferentes). **No es una
+validación de sesgos**: revisa con personas los resultados y los campos
+extraídos, porque puede quedar información privada en texto libre.
+
 ## Limitaciones del motor IA
 
 El porcentaje es una **similitud semántica orientativa**, no una probabilidad de contratación ni una decisión automática. La revisión humana es obligatoria. No deben usarse características personales protegidas para clasificar perfiles. Los resultados requieren validación de extracción y pertinencia. La generación de descripciones usa Gemini si existe una credencial `GEMINI_API_KEY` válida; el ranking semántico opera localmente.
@@ -72,6 +89,16 @@ El porcentaje es una **similitud semántica orientativa**, no una probabilidad d
 ```
 
 Las pruebas usan una **base temporal** y simulan el cálculo de embeddings; no son una medición de calidad del modelo semántico. Verifican además los permisos del backend. Antes de registrar el commit, comprueba que `git status` no incluya `.env`, CV ni bases de datos.
+
+## Entorno reproducible y modelo Gemini (versión 3.8)
+
+- Las dependencias se declaran en `requirements.txt`, incluido `google-genai` (SDK actual utilizado por `servicios/gemini_ia.py`) y `pytest` para pruebas. No instalar `google-generativeai` como reemplazo del SDK nuevo.
+- `GEMINI_MODEL=gemini-3.8-flash` es el valor de ejemplo en `.env.example` y el valor predeterminado del servicio. Requiere `GEMINI_API_KEY` y acceso habilitado por Google para la cuenta. Si la cuenta no dispone del modelo, selecciona uno **realmente disponible en tu proyecto**, actualiza `.env` y reinicia FastAPI. No publiques tu clave.
+- El modelo de similitud (distinto a Gemini) se configura opcionalmente con `EMBEDDINGS_MODEL`; su primera descarga requiere conexión a Internet.
+- En CurriculAi 3.8 se ejecutaron **28 pruebas exitosas** con SQLite aislado y simulaciones; esta cifra es una evidencia del corte y puede crecer con nuevos tests. La integración real con Supabase, Gemini y UltraMsg requiere pruebas separadas.
+- Cuando falle el endpoint de ranking, FastAPI devuelve `500` en lugar de simular que no hay candidatos; las pantallas Radar y Vacantes muestran ese error explícitamente.
+
+El procedimiento de aceptación manual, las capturas previstas y la trazabilidad de pruebas se describen en `docs/PLAN_EVIDENCIAS_MVP.md`. Las capturas y datos usados para demostración deben ser ficticios.
 
 ## Uso de IA en el desarrollo
 

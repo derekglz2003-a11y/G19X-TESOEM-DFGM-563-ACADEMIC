@@ -48,7 +48,7 @@ El MVP **no** contiene aún portal del candidato ni múltiples usuarios con role
 | CA-12 | Bitácora WhatsApp (P1) | **Dada** una acción de mensajería, **cuando** UltraMsg responde, **entonces** se registra estado y respuesta; sin credenciales no se informa falsamente un envío exitoso | Bitácora implementada; envío real externo no validado |
 | CA-13 | Descripción con Gemini (P1) | **Dado** un título de puesto y contexto, **cuando** se invoca IA configurada, **entonces** se propone un texto que el humano revisa; sin clave, la API informa indisponibilidad | Ruta implementada y caso sin clave probado; generación real pendiente |
 | CA-14 | Eliminación y confirmación (P0) | **Dado** un expediente o pool de prueba, **cuando** no hay confirmación o clave, **entonces** no debe efectuarse eliminación; con ambas y decisión del admin, se elimina según la operación | UI + API implementadas; validación destructiva solo en BD aislada |
-| CA-15 | Instalación y pruebas (P0) | **Dado** un clon del repositorio sin secretos, **cuando** se configuran dependencias y credenciales de prueba, **entonces** el sistema inicia y el comando de pruebas finaliza sin fallos | Documentado; 19 pruebas reportadas como exitosas en entorno de desarrollo; instalación desde cero pendiente |
+| CA-15 | Instalación y pruebas (P0) | **Dado** un clon del repositorio sin secretos, **cuando** se configuran dependencias y credenciales de prueba, **entonces** el sistema inicia y el comando de pruebas finaliza sin fallos | Documentado; 28 pruebas aprobadas en entorno aislado al corte 3.8; instalación limpia desde cero pendiente |
 
 **P0:** imprescindible para considerar completo el MVP administrativo.
 **P1:** integración complementaria, operativa solo cuando exista proveedor disponible.
@@ -107,7 +107,7 @@ Usa una copia temporal del proyecto con una base **desechable**, dos o tres vaca
 
 ## 5. Evidencia automatizada existente
 
-En CurriculAi 3.5 se incluyen `tests/test_api.py` y `tests/test_perfil_laboral.py`. Según la ejecución local registrada durante el desarrollo, `pytest -q tests` terminó con **19 pruebas aprobadas y 2 advertencias**; no se comprobaron así la calidad del modelo real ni las conexiones externas.
+Al corte CurriculAi 3.8 se incluyen `tests/test_api.py`, `tests/test_perfil_laboral.py` y `tests/test_gemini_ia.py`. Se ejecutó `python -m pytest -q tests` sobre una base SQLite aislada y **28 pruebas finalizaron correctamente** durante la preparación del parche. Es necesario repetir este comando en la computadora del responsable y guardar evidencia del resultado. Las pruebas simulan Gemini, embeddings y parte del OCR: no certifican calidad del modelo ni disponibilidad de servicios externos.
 
 Comando reproducible desde la raíz del repositorio:
 
@@ -136,7 +136,7 @@ Comando reproducible desde la raíz del repositorio:
 | E2E-03 | Tabla de CV ficticios por formato, texto extraído, error si aplica | **Pendiente de medición manual** |
 | E2E-04 | Comparación de ranking antes/después de reevaluar | Pruebas automatizadas disponibles; integración manual pendiente |
 | E2E-05 | Respuesta de Gemini/UltraMsg en entorno de prueba, si se dispone | **Opcional; integración real pendiente** |
-| TA-01 | Captura del terminal con 19/19 tests aprobados | **Resultado observado en desarrollo**; conservar evidencia |
+| TA-01 | Captura del terminal con todas las pruebas aprobadas (27 en 3.8) | **Resultado en entorno aislado**; repetir y conservar evidencia del equipo local |
 
 Para cada evidencia se recomienda documentar: fecha, commit, versión de Python, entorno (local/aislado), datos sintéticos utilizados, resultado esperado, resultado observado, errores y responsable que revisó.
 
