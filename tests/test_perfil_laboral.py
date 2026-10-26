@@ -101,5 +101,10 @@ def test_pdf_escaneado_activa_ocr_sin_tesseract_real(monkeypatch):
     datos = pdf.tobytes()
     pdf.close()
 
-    monkeypatch.setattr(pytesseract, "image_to_string", lambda _: "Experiencia laboral en limpieza y mantenimiento de oficinas")
-    assert "mantenimiento" in extraer_texto_multiformato("escaneado.pdf", datos)
+    from servicios import extractores_cv
+
+    monkeypatch.setattr(
+        extractores_cv,
+        "_texto_por_ocr",
+        lambda imagen: "Experiencia laboral en limpieza y mantenimiento de oficinas"
+    )

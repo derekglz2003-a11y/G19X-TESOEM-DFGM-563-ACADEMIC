@@ -38,8 +38,16 @@ def render(ctx):
     st.markdown('<div class="cai-intro"><div><div class="cai-kicker">GESTIÓN DE TALENTO</div><h1>Candidatos</h1><p class="cai-descripcion">Carga currículums, encuentra perfiles más rápido y administra expedientes sin estar deslizando de más.</p></div></div>', unsafe_allow_html=True)
 
     aviso = st.session_state.pop("flash_candidatos", None)
+    detalles = st.session_state.pop("flash_candidatos_errores", [])
     if aviso:
-        st.success(aviso)
+        if aviso.startswith("¡0 candidato(s)") and detalles:
+            st.warning(aviso)
+        else:
+            st.success(aviso)
+    if detalles:
+        st.error("No se pudieron procesar algunos archivos:")
+        for detalle in detalles:
+            st.write(f"• {detalle}")
 
     with st.expander("+ Cargar nuevos currículums", expanded=not bool(candidatos)):
         archivos = st.file_uploader(
@@ -52,7 +60,13 @@ def render(ctx):
             with st.spinner("Extrayendo datos y registrando currículums..."):
                 r = api_post("/api/v1/analizar-cvs-masivo", files=files)
             if r is not None and r.ok:
-                st.session_state["flash_candidatos"] = r.json().get("mensaje", "Currículums procesados")
+                resultado = r.json()
+                st.session_state["flash_candidatos"] = resultado.get(
+                    "mensaje", "Currículums procesados"
+                )
+                st.session_state["flash_candidatos_errores"] = resultado.get(
+                    "detalles_tecnicos", []
+                )
                 st.rerun()
             else:
                 st.error(_err(r))
