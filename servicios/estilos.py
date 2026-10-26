@@ -33,7 +33,8 @@ html,body,.stApp,[data-testid="stAppViewContainer"]{background:var(--cai-bg)!imp
 [data-testid="stSidebar"], [data-testid="collapsedControl"] {display:none!important;}
 [data-testid="stMainBlockContainer"] {
   max-width: 1600px !important;
-  padding: 0.75rem 1.35rem 2rem !important;
+  /* La barra fija sale del flujo: reservamos espacio para no tapar el contenido. */
+  padding: 8.2rem 1.35rem 2rem !important;
 }
 [data-testid="stVerticalBlock"] {gap:0.7rem;}
 h1,h2,h3,h4{color:var(--cai-blue-dark)!important;letter-spacing:-.02em!important;}
@@ -41,21 +42,27 @@ h1{font-size:2rem!important; margin-bottom:.2rem!important;}
 h2{font-size:1.25rem!important;}
 p, li, label, [data-testid="stCaptionContainer"]{color:var(--cai-text)!important;}
 
-/* Topbar fija */
-[class*="st-key-cai_topbar"]{
-  position:sticky!important; top:0!important; z-index:9999!important;
-  width:calc(100vw - 24px)!important;
-  margin-left:calc(50% - 50vw + 12px)!important;
-  box-sizing:border-box!important;
-  background:var(--cai-blue)!important; border-radius:0 0 14px 14px!important;
-  padding:9px max(18px, calc((100vw - 1580px) / 2))!important;
-  margin-bottom:10px!important;
-  box-shadow:0 8px 20px rgba(16,45,66,.16)!important;
+/* Cabecera completa SIEMPRE visible: la fijamos al viewport,
+   no al bloque que se desplaza dentro de Streamlit. */
+[class*="st-key-cai_topbar"] {
+  position: fixed !important;
+  top: 0 !important;
+  left: 0 !important;
+  right: 0 !important;
+  z-index: 9999 !important;
+  width: 100% !important;
+  min-height: 100px !important;
+  margin: 0 !important;
+  box-sizing: border-box !important;
+  background: var(--cai-blue) !important;
+  border-radius: 0 0 15px 15px !important;
+  padding: 13px clamp(14px, 2vw, 32px) !important;
+  box-shadow: 0 8px 20px rgba(16,45,66,.18) !important;
 }
 .cai-brand-wrap{display:flex;align-items:center;gap:12px;min-width:0;}
-.cai-brand-title{font-size:1.12rem!important;font-weight:800!important;color:#fff!important;line-height:1.08;margin:0!important;white-space:nowrap;}
-.cai-brand-sub{font-size:.58rem!important;font-weight:700!important;letter-spacing:.06em;color:#dcecf5!important;text-transform:uppercase;white-space:nowrap;}
-[class*="st-key-cai_topbar"] [data-testid="stImage"] img{border-radius:10px; background:white; padding:4px;}
+.cai-brand-title{font-size:1.25rem!important;font-weight:800!important;color:#fff!important;line-height:1.08;margin:0!important;white-space:nowrap;}
+.cai-brand-sub{font-size:.64rem!important;font-weight:700!important;letter-spacing:.06em;color:#dcecf5!important;text-transform:uppercase;white-space:nowrap;}
+[class*="st-key-cai_topbar"] [data-testid="stImage"] img{border-radius:11px; background:white; padding:4px; width:78px!important; max-width:78px!important;}
 .cai-top-actions{display:flex;justify-content:flex-end;align-items:center;gap:8px;}
 .cai-status{display:inline-flex;align-items:center;justify-content:center;padding:8px 11px;border-radius:999px;font-size:.74rem;font-weight:700;white-space:nowrap;}
 .cai-status.ok{background:#244e79;color:#dff4eb;}
@@ -79,16 +86,16 @@ p, li, label, [data-testid="stCaptionContainer"]{color:var(--cai-text)!important
 [class*="st-key-cai_topbar"] [data-testid="stRadio"] div[role="radiogroup"] label {
     border:1px solid transparent!important;
     border-radius:8px!important;
-    padding:7px 8px!important;
+    padding:9px 9px!important;
     margin:0!important;
-    min-height:36px!important;
+    min-height:42px!important;
     flex:0 0 auto!important;
     background:transparent!important;
     transition:background .15s ease;
 }
 [class*="st-key-cai_topbar"] [data-testid="stRadio"] div[role="radiogroup"] label p {
     color:#fff!important;
-    font-size:clamp(.65rem,.78vw,.85rem)!important;
+    font-size:clamp(.72rem,.82vw,.92rem)!important;
     font-weight:700!important;
     white-space:nowrap!important;
 }
@@ -100,11 +107,13 @@ p, li, label, [data-testid="stCaptionContainer"]{color:var(--cai-text)!important
 [class*="st-key-cai_topbar"] [data-testid="stRadio"] label [data-baseweb="radio"] {margin:0!important;}
 [class*="st-key-cai_topbar"] [data-testid="stRadio"] label [data-testid="stMarkdownContainer"] {margin:0!important;}
 [class*="st-key-cai_topbar"] .cai-status {font-size:.66rem!important;padding:6px 8px!important;}
-[class*="st-key-cai_topbar"] .cai-brand-sub {font-size:.56rem!important;}
+[class*="st-key-cai_topbar"] .cai-brand-sub {font-size:.64rem!important;}
 
 /* En pantallas intermedias, las opciones se distribuyen en dos filas
    si realmente no caben; nunca se ofrece una barra horizontal molesta. */
 @media (max-width:1160px) {
+  [class*="st-key-cai_topbar"] {min-height:110px!important;}
+  [data-testid="stMainBlockContainer"] {padding-top:9.5rem!important;}
   [class*="st-key-cai_topbar"] [data-testid="stRadio"] div[role="radiogroup"] {
     flex-wrap:wrap!important;justify-content:center!important;row-gap:0!important;
   }
@@ -115,6 +124,9 @@ p, li, label, [data-testid="stCaptionContainer"]{color:var(--cai-text)!important
 /* En móvil, cabeceras y navegación pueden ocupar dos renglones,
    pero todos los apartados siguen accesibles sin deslizar lateralmente. */
 @media (max-width:740px) {
+  [class*="st-key-cai_topbar"] {min-height:0!important;padding:8px 10px!important;}
+  [data-testid="stMainBlockContainer"] {padding-top:15rem!important;}
+  [class*="st-key-cai_topbar"] [data-testid="stImage"] img {width:64px!important;max-width:64px!important;}
   [class*="st-key-cai_topbar"] {padding:8px 10px!important;}
   [class*="st-key-cai_topbar"] [data-testid="stHorizontalBlock"] {flex-wrap:wrap!important;gap:6px!important;}
   [class*="st-key-cai_topbar"] [data-testid="stHorizontalBlock"] > div {flex:1 1 100%!important;width:100%!important;}
@@ -192,8 +204,8 @@ p, li, label, [data-testid="stCaptionContainer"]{color:var(--cai-text)!important
 .cai-actions-inline > div{flex:1 1 140px;}
 .cai-mini-note{font-size:.74rem;color:var(--cai-muted);}
 .cai-list-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px;}
-@media(max-width:920px){.cai-list-grid{grid-template-columns:1fr;} [class*="st-key-cai_topbar"]{padding:8px 12px!important;} }
-@media(max-width:650px){[data-testid="stMainBlockContainer"]{padding:.5rem .75rem 2rem!important;} .cai-item-banner .cai-title{font-size:1rem;} .cai-brand-sub{display:none;} }
+@media(max-width:920px){.cai-list-grid{grid-template-columns:1fr;} [class*="st-key-cai_topbar"]{padding:10px 12px!important;} }
+@media(max-width:650px){[data-testid="stMainBlockContainer"]{padding:15rem .75rem 2rem!important;} .cai-item-banner .cai-title{font-size:1rem;} .cai-brand-sub{display:none;} }
 
 .stProgress > div > div > div > div{background:var(--cai-blue)!important;}
 </style>
