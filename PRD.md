@@ -1,17 +1,17 @@
 # PRD — CurriculAi
 
 **Nombre del producto:** CurriculAi — Optimizador de filtrado curricular mediante IA
-**Versión del documento:** 1.0 · CurriculAi 3.6 (documentación del MVP 3.5)
-**Fecha de referencia:** 21 de octubre de 2026
+**Versión del documento:** 2.0 · actualización de alcance del portal de candidatos
+**Fecha de referencia:** 2 de noviembre de 2026 (la versión 3.5 se conserva como antecedente)
 **Estado:** Propuesta para revisión académica y validación funcional, no aprobación de producción
 **Responsable:** Desarrollo del proyecto CurriculAi
 **Documento complementario:** [`MVP.md`](MVP.md)
 
-> **Alcance de este PRD:** especifica el producto, las funciones existentes y los compromisos de verificación propuestos. Se basa en el código de CurriculAi 3.5. No acredita por sí mismo la calidad del ranking con CV reales, el funcionamiento de servicios externos ni un despliegue de producción. No contiene información identificable de clientes, empresas receptoras o postulantes.
+> **Alcance de este PRD:** especifica el producto, las funciones existentes y los compromisos de verificación propuestos. Se actualiza con los módulos del portal de candidatos de la rama `acceso-dos-roles`. No acredita por sí mismo la calidad del ranking con CV reales, el funcionamiento de servicios externos ni un despliegue de producción. No contiene información identificable de clientes, empresas receptoras o postulantes.
 
 ## 1. Resumen ejecutivo
 
-CurriculAi es una aplicación de asistencia al reclutamiento que centraliza vacantes, expedientes curriculares, evaluaciones semánticas, entrevistas, decisiones de selección y registros de mensajes. Su primer producto mínimo viable (MVP) está dirigido a **un administrador de reclutamiento** que utiliza un panel de Streamlit conectado a una API FastAPI y a una base de datos configurada mediante variables de entorno.
+CurriculAi es una aplicación de asistencia al reclutamiento que centraliza vacantes, expedientes curriculares, evaluaciones semánticas, entrevistas, decisiones de selección y registros de mensajes. El MVP administrativo original atiende a **un administrador de reclutamiento**; la rama `acceso-dos-roles` amplía el alcance con un **portal de candidatos**, donde pueden registrar una cuenta, crear o cargar su CV, compartirlo voluntariamente, consultar vacantes publicadas y seguir postulaciones y avisos. Ambos utilizan Streamlit, FastAPI y una base de datos configurada mediante variables de entorno.
 
 El motor inteligente compara el texto profesional de una vacante con **perfil, experiencia y habilidades** de los candidatos. Devuelve un porcentaje de **similitud textual orientativo**, una explicación y el número de expedientes excluidos por información insuficiente. **No determina por sí solo si una persona debe ser contratada.**
 
@@ -27,14 +27,14 @@ Esta necesidad es la hipótesis de producto; el ahorro de tiempo y la utilidad e
 
 ## 3. Usuarios y actores
 
-| Actor | Necesidad | Acceso en la versión 3.5 |
+| Actor | Necesidad | Acceso en la versión ampliada |
 |---|---|---|
 | Administrador de reclutamiento (usuario principal) | Gestionar vacantes, CV, ranking, entrevistas y estados | **Implementado:** una cuenta administrativa de acceso al panel |
-| Postulante / candidato (persona cuyos datos se gestionan) | Proporcionar CV y conocer el estado de su proceso | **No implementado:** no dispone de un portal ni credenciales propias |
+| Postulante / candidato (persona cuyos datos se gestionan) | Mantener su perfil, compartir CV y consultar procesos propios | **Implementado:** registro, sesión propia, CV manual/cargado, vacantes publicadas, postulación, entrevistas y notificaciones privadas |
 | Evaluador académico o de calidad | Comprobar requisitos, instalación y pruebas | Acceso por repositorio, documentación y ejecución con datos ficticios; **no debe acceder a CV reales** |
 | Proveedor externo de servicios | Ofrecer almacenamiento remoto, generación de texto o mensajería | Integración técnica, no usuario con acceso autónomo al panel |
 
-**Decisión de alcance:** el rol de candidato se propone para una fase posterior. El MVP evaluable no debe anunciar acceso individual de postulantes ni autorización por roles múltiples.
+**Decisión de alcance actualizada:** existen **dos tipos de acceso**: administrador con `X-API-Key` en API y candidato autenticado con sesión `Bearer` en `/portal`. Esto **no** incluye múltiples empresas ni diferentes cuentas administrativas con permisos distintos.
 
 ## 4. Propuesta de valor
 
@@ -54,8 +54,8 @@ Las metas siguientes son **criterios para evaluar el MVP, no métricas de rendim
 | OBJ-01 | Completar el proceso administrativo de extremo a extremo | Ejecutar **5 de 5** escenarios de vacante → CV → ranking → seguimiento → entrevista/decisión sin bloqueos | Lista de verificación E2E documentada en `MVP.md`, ambiente de prueba |
 | OBJ-02 | Asegurar una extracción controlada de documentos | Obtener texto laboral utilizable en **al menos 18 de 20** CV ficticios legibles de los formatos admitidos; registrar por separado casos de OCR | Dataset de prueba definido, revisión manual de texto extraído y registro de errores; **meta, no resultado** |
 | OBJ-03 | Mantener resultados explicables y evitar influencia directa de atributos protegidos | En **100 %** de las pruebas de insumo del motor, excluir campos administrativos explícitos (nombre, edad, sexo, teléfono, correo y CV íntegro) y presentar justificación/omitidos | Pruebas del módulo `servicios/perfil_laboral.py`, inspección del ranking y revisión humana |
-| OBJ-04 | Verificar controles de acceso | **100 %** de las rutas operativas probadas sin clave válida deben denegar acceso y **0** secretos reales deben figurar en Git | Pruebas negativas de API, búsqueda de secretos y `git status` / `.gitignore` |
-| OBJ-05 | Demostrar reproducibilidad técnica | Una instalación limpia con instrucciones debe ejecutar el sistema y completar **la totalidad de las pruebas automatizadas del repositorio** (27 incluidas en el corte 3.8), o documentar las diferencias de entorno | Ejecución de `pytest`, evidencia del entorno, README e informe de instalación |
+| OBJ-04 | Verificar controles de acceso | **100 %** de las rutas administrativas protegidas probadas sin clave válida deben denegar acceso y **0** secretos reales deben figurar en Git | Pruebas negativas de API, búsqueda de secretos y `git status` / `.gitignore` |
+| OBJ-05 | Demostrar reproducibilidad técnica | Una instalación limpia con instrucciones debe ejecutar el sistema y completar **la totalidad de las pruebas automatizadas del repositorio** (28 registradas en el corte histórico 3.8), o documentar las diferencias de entorno | Ejecución de `pytest`, evidencia del entorno, README e informe de instalación |
 
 **Pendientes de medición:** tiempos reales de análisis, pertinencia de resultados, tasa de errores de OCR con Tesseract real, eficacia de las recomendaciones, latencia de servicios externos, seguridad en despliegue público y pruebas de sesgos. No deben presentarse como aprobados sin evidencia.
 
@@ -76,11 +76,19 @@ Las metas siguientes son **criterios para evaluar el MVP, no métricas de rendim
 11. Generación asistida de la descripción de una vacante únicamente si Gemini está configurado y responde.
 12. Configuración básica, reinicio de vista y cierre de sesión; tareas destructivas con confirmación.
 
-### 6.2 Fuera del MVP actual
+### 6.2 Portal del candidato incorporado a la rama `acceso-dos-roles`
 
-- Portal público de candidatos, autoservicio, registro de cuentas y autenticación del postulante.
-- Sistema multiempresa, cuentas de reclutadores múltiples y autorización por roles.
-- Publicación pública de vacantes, postulación externa o firma de contratos.
+1. Registro e inicio de sesión propios; perfil laboral privado.
+2. Generación manual de CV y carga de documento, con corrección posterior.
+3. Compartición **explícita** de CV con reclutamiento; vínculo único a un expediente administrativo evaluable, sin necesitar postularse primero.
+4. Publicación voluntaria de vacantes por el administrador, consulta y postulación por el candidato.
+5. Seguimiento de postulaciones, entrevistas asociadas y notificaciones persistentes privadas.
+6. Invitaciones del reclutador a revisar vacantes, sin prometer selección ni contratación.
+
+### 6.3 Fuera de alcance / pendientes
+
+- Sistema multiempresa y varias cuentas de reclutadores con permisos diferenciados.
+- Publicación anónima sin cuenta, firma de contratos o contratación automática.
 - Aprobación/rechazo laboral **automático** por puntuación.
 - Verificación independiente de veracidad de los CV o certificación de ausencia de sesgos.
 - Envíos garantizados, lectura confirmada o entrega final de WhatsApp sin verificación del proveedor.
@@ -89,7 +97,7 @@ Las metas siguientes son **criterios para evaluar el MVP, no métricas de rendim
 
 ## 7. Requisitos funcionales (RF)
 
-**Estados:** `Implementado` significa que existe una ruta o interfaz en el código 3.5, no que haya sido validada en producción. `Opcional` requiere servicio o credencial externa. `Pendiente` está fuera del MVP actual.
+**Estados:** `Implementado` significa que existe una ruta o interfaz en la versión de código de referencia, no que haya sido validada en producción. `Opcional` requiere servicio o credencial externa. `Pendiente` está fuera del MVP actual.
 
 | ID | Requisito comprobable | Prioridad | Estado y evidencia técnica |
 |---|---|---|---|
@@ -107,14 +115,19 @@ Las metas siguientes son **criterios para evaluar el MVP, no métricas de rendim
 | RF-12 | Generar borradores de descripción de puestos con IA y permitir revisión antes de guardarlos | P1 | Integración implementada; depende de `GEMINI_API_KEY` válida |
 | RF-13 | Mostrar errores legibles cuando no hay conexión, faltan credenciales o un formato es incompatible | P0 | Rutas y controles presentes; validación integral pendiente |
 | RF-14 | Proporcionar documentación, variables de entorno de ejemplo y ejecución de pruebas con datos aislados | P0 | `README.md`, `.env.example`, `tests/` y documentos 3.6 |
-| RF-15 | Permitir al candidato registrarse y consultar su propio proceso | P2 | **Pendiente — fuera del MVP administrativo** |
-| RF-16 | Registrar múltiples administradores y gestionar permisos por rol | P2 | **Pendiente — fuera del MVP administrativo** |
+| RF-15 | Permitir al candidato registrarse y consultar su propio proceso | P0 (portal) | **Implementado:** `servicios/portal_auth.py`, `servicios/portal_expediente.py`, `servicios/portal_oportunidades.py` y pruebas del portal; validar manualmente sobre el commit final |
+| RF-16 | Registrar múltiples administradores y gestionar permisos por empresa | P2 | **Pendiente:** existe un acceso administrativo, no un sistema multiempresa o de reclutadores independientes |
+| RF-17 | Crear/actualizar CV manual o importar archivo desde la cuenta personal | P0 (portal) | Implementado; `servicios/portal_expediente.py` y `tests/test_cv_manual_portal.py` |
+| RF-18 | Compartir CV con consentimiento e incorporarlo sin duplicar al pool de ranking | P0 (portal) | Implementado; `portal_candidato_vinculos`, rutas de compartición y pruebas de flujo |
+| RF-19 | Publicar vacantes expresamente y admitir una postulación por candidato/vacante | P0 (portal) | Implementado; `servicios/portal_oportunidades.py` y pruebas de postulaciones |
+| RF-20 | Mostrar solo postulaciones y avisos propios; informar etapas y entrevistas vinculadas | P0 (portal) | Implementado; sesiones Bearer, validación del dueño y prueba de aislamiento; despliegue público no validado |
+| RF-21 | Permitir invitación desde la evaluación y aviso interno sin prometer contratación | P1 (portal) | Implementado; ruta `/api/v1/invitaciones/{vacante_id}/{candidato_id}`; verificar en UI con cuenta ficticia |
 
 ## 8. Requisitos no funcionales (RNF)
 
 | ID | Requisito / meta | Verificación | Situación actual |
 |---|---|---|---|
-| RNF-01 Seguridad | Denegar rutas operativas sin clave válida y evitar secretos en el repositorio | Pruebas negativas de API, revisión de `.env` y `.gitignore` | Protección básica implementada; no implica seguridad de producción |
+| RNF-01 Seguridad | Denegar rutas administrativas sin `X-API-Key` válida y rutas privadas del portal sin sesión `Bearer` válida; evitar secretos en el repositorio | Pruebas negativas de API, revisión de `.env` y `.gitignore` | Protección básica implementada; no implica seguridad de producción |
 | RNF-02 Privacidad | Limitar campos usados por el embedding a perfil, experiencia y habilidades; no compartir CV reales en código o evidencias públicas | Pruebas unitarias, revisión del insumo y repositorio | Medida técnica implementada; anonimización total **no garantizada** |
 | RNF-03 Trazabilidad | Conservar estado por vacante y justificación de evaluaciones | Pruebas API y revisión en UI | Flujo funcional implementado; auditoría de modificaciones completa pendiente |
 | RNF-04 Reproducibilidad | Instalar desde el repositorio y ejecutar pruebas sin una conexión remota real | README, `.env.example` y base aislada | 28 pruebas automatizadas aprobadas en una base aislada durante el corte 3.8; falta repetir la instalación desde cero |
@@ -146,6 +159,8 @@ FastAPI (main.py)
          +--> Gemini [opcional: extracción/descr. puesto]
          +--> UltraMsg [opcional: mensajería]
          |
+         +--> Portal candidato (/portal): cuenta, expediente, publicaciones, postulaciones y avisos
+         |
          v
 SQLAlchemy (database.py)
          +--> SQLite local de desarrollo [por defecto]
@@ -164,6 +179,10 @@ Las credenciales se leen de `.env` y **no** deben aparecer en GitHub ni document
 **HU-06 — Tomar decisión.** Como administrador quiero marcar finalistas y aceptar, rechazar o retirar perfiles, de manera deliberada y trazable.
 **HU-07 — Resguardar información.** Como administrador quiero que las rutas estén protegidas y evitar publicar datos privados accidentalmente.
 
+**HU-08 — Crear y compartir CV.** Como candidato quiero generar o cargar mi CV, editarlo y autorizar su compartición antes de entrar al pool del administrador.
+**HU-09 — Postularme.** Como candidato quiero consultar vacantes publicadas y enviar una solicitud una sola vez por puesto.
+**HU-10 — Conocer avances.** Como candidato quiero consultar mis entrevistas, etapas y notificaciones sin ver información de otras cuentas.
+
 Los casos de aceptación verificables para estas historias están en `MVP.md`.
 
 ## 11. Dependencias, restricciones y riesgos
@@ -181,7 +200,7 @@ Los casos de aceptación verificables para estas historias están en `MVP.md`.
 
 ## 12. Plan de validación y aceptación
 
-1. Ejecutar `python -m pytest -q tests` en un entorno aislado: **28 pruebas disponibles en el corte 3.8**. Registrar salida, versión de Python y fecha de ejecución.
+1. Ejecutar `python -m pytest -q tests` en un entorno aislado: **28 pruebas disponibles en el corte histórico 3.8**; el número vigente debe obtenerse de `pytest` en el commit final. Registrar salida, versión de Python y fecha de ejecución.
 2. Ejecutar el recorrido manual E2E con una vacante y CV ficticios, **sin utilizar credenciales reales de postulantes**.
 3. Verificar autenticación, lectura prohibida sin clave, edición y eliminaciones solo en datos de prueba.
 4. Ejecutar un escenario con CV profesional válido, uno genérico, uno DOCX con tablas y uno `.doc` heredado; registrar resultado observado.
@@ -193,7 +212,7 @@ Los casos de aceptación verificables para estas historias están en `MVP.md`.
 
 ## 13. Roadmap después del MVP
 
-- **Fase siguiente:** cuentas de candidato, postulación propia y consulta de estado con aislamiento de información por identidad.
+- **Consolidación de lo implementado:** verificar en un clon limpio los módulos de candidato, consentimiento de compartición, postulaciones y notificaciones, sin extender nuevas funcionalidades.
 - **Siguiente mejora técnica:** asociación de múltiples entrevistas y vacantes por candidato, historial de cambios por administrador y borrados auditables.
 - **Privacidad/seguridad:** revisión legal, política de retención y consentimiento aplicable, HTTPS, autorización por roles, limitación de intentos y auditoría.
 - **Evaluación de calidad:** corpus de CV ficticios representativos, revisión humana de pertinencia, estudio de resultados por subgrupos sin uso de datos personales sensibles en el ranking.
@@ -201,10 +220,10 @@ Los casos de aceptación verificables para estas historias están en `MVP.md`.
 
 ## 14. Decisiones por validar
 
-1. Aprobación académica de los objetivos medibles (OBJ-01 a OBJ-05) y del alcance estrictamente administrativo.
+1. Aprobación académica de los objetivos medibles (OBJ-01 a OBJ-05) y del alcance ampliado a administrador + candidato.
 2. Responsable autorizado de los expedientes, finalidad y plazo de conservación de CV.
 3. Política de credenciales y requisitos de despliegue cuando el sistema deje de ser prototipo local.
-4. Modelo de cuenta de candidato y capacidad de postularse a varias vacantes en fases futuras.
+4. Reglas de comunicación con candidatos y cómo se informarán los cambios en postulaciones, incluidas invitaciones y decisiones.
 5. Conjunto y método de evaluación de pertinencia del ranking para CV redactados en español.
 
 ---

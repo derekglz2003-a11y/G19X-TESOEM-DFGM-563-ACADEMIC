@@ -1,6 +1,6 @@
 # CurriculAi — Optimizador de filtrado curricular con IA
 
-Prototipo académico de gestión de vacantes y candidatos, análisis semántico orientativo, entrevistas y bitácora de WhatsApp. **MVP administrativo**: acceso de un único administrador. No incluye todavía portal de candidatos ni permisos por roles.
+Prototipo académico de reclutamiento con **dos vistas separadas**: administración (vacantes, expedientes, ranking semántico orientativo, entrevistas y decisiones) y portal del candidato (cuenta propia, perfil, CV manual o cargado, vacantes publicadas, postulaciones y avisos en la web). El sistema incorpora controles básicos de acceso por rol; **no es una aplicación validada para desplegarse públicamente con CV reales**.
 
 ## Requisitos
 
@@ -39,9 +39,11 @@ El asistente pedirá una contraseña de al menos 12 caracteres y creará/actuali
 .\venv\Scripts\python.exe -m streamlit run app.py --server.port 8501
 ```
 
-Entra a `http://localhost:8501`, escribe la contraseña creada y utiliza los módulos. En `Configuración` puedes cerrar sesión. Si cambias la contraseña o clave de API, **reinicia ambos procesos**.
+Entra a `http://localhost:8501`. Selecciona **Administrador** para entrar con la contraseña configurada, o **Candidato** para registrarte/iniciar sesión con tu cuenta propia. Ambos tienen cierre de sesión. Si cambias las credenciales de la API, **reinicia ambos procesos**.
 
-Swagger puede abrirse en `http://localhost:8000/docs`, pero **todas las operaciones** exigen el encabezado `X-API-Key`. No compartas esa clave ni la incrustes en JavaScript o en código que llega al navegador.
+Los puertos **8000/8501 son los valores de ejemplo para una instalación nueva**. Si trabajas con FastAPI en 8010 y Streamlit en 8502, establece `API_URL=http://127.0.0.1:8010` en la terminal de Streamlit (o en `.env`) y arranca los procesos en esos puertos. Los dos procesos deben usar la **misma `DATABASE_URL`**; no se sincronizan automáticamente las bases SQLite de prueba ni Supabase.
+
+Swagger administrativo puede abrirse en `http://localhost:8000/docs`. Las rutas administrativas protegidas exigen el encabezado `X-API-Key`; las rutas privadas del candidato bajo `/portal` utilizan su token de sesión `Bearer`, y registro/ingreso tienen sus propias validaciones. No compartas ninguna credencial ni la incrustes en JavaScript o código que llega al navegador.
 
 ## Flujo del MVP
 
@@ -51,15 +53,31 @@ Swagger puede abrirse en `http://localhost:8000/docs`, pero **todas las operacio
 4. Revisa las evidencias manualmente y da seguimiento al candidato.
 5. Agenda entrevistas, gestiona finalistas y registra la notificación WhatsApp si el proveedor está configurado.
 
-## Qué protege la versión 3.4
+
+## Funciones del portal del candidato (rama `acceso-dos-roles`)
+
+- **Registro y acceso independientes** del administrador. La cuenta recién creada no se incorpora automáticamente al pool evaluable.
+- **Mi perfil y Mi CV:** completar información laboral, crear CV manualmente o cargar un archivo; descargar el CV elaborado en Word. El CV solo pasa al pool administrativo cuando la persona elige **Compartir mi CV**.
+- **Expediente único:** las actualizaciones del CV compartido reutilizan la vinculación de la cuenta y retiran puntajes anteriores para recalcularlos. No se generan resultados automáticos de contratación.
+- **Vacantes y postulaciones:** el administrador publica expresamente una vacante; el candidato puede consultarla y postularse. El sistema impide repetir la misma postulación activa.
+- **Mis entrevistas y Notificaciones:** el candidato consulta citas asociadas a sus postulaciones y avisos persistentes sobre invitaciones, entrevistas y resultados que un reclutador haya registrado. Los avisos son privados de su cuenta.
+- **Limitación del esquema actual:** `Entrevista.candidato_id` es único; aún no se admiten varias entrevistas independientes por candidato sin rediseñar/migrar esa relación.
+
+**Regla de uso de IA:** el porcentaje del ranking es orientativo, no una probabilidad de contratación; solo el reclutador decide y el candidato no recibe el ranking interno de otros usuarios.
+
+**Validación:** las pruebas automáticas incluyen escenarios simulados de portal y notificaciones, pero **no sustituyen** la comprobación con OCR, Gemini, UltraMsg, permisos reales y una instalación limpia. Antes del merge, guarda evidencia de `pytest` en la rama y confirma que la base de pruebas es aislada.
+
+## Seguridad: antecedente de la versión 3.4 y portal actual
 
 - La interfaz solicita contraseña antes de mostrar los expedientes.
-- El servidor FastAPI exige una clave privada `X-API-Key` para todas las rutas operativas (lectura, creación, edición y borrado).
+- El servidor FastAPI exige una clave privada `X-API-Key` para las rutas administrativas protegidas (lectura, creación, edición y borrado); el portal verifica su propia sesión `Bearer` en las operaciones privadas.
 - No se permite un acceso abierto cuando faltan credenciales: se rechazan peticiones.
 - Las credenciales están en `.env` y no se incluyen en el repositorio.
 - Las pruebas verifican que una lectura y un DELETE sin autorización fallen.
 
-**Limitaciones de seguridad:** Esta protección es un primer corte para un prototipo académico, **no una solución lista para Internet**. Para producción faltan HTTPS, cuentas individuales, autorización por roles, control de intentos, auditoría, sesiones de mayor seguridad, políticas de retención y despliegue aislado. No subir CV reales, datos personales ni bases de datos al repositorio público.
+**Estado actual:** el portal de candidatos añade registro y sesiones propias mediante `Bearer`; sus rutas de perfil, postulaciones y notificaciones comprueban la identidad del candidato. El backend administrativo continúa protegido con `X-API-Key`. No se deben confundir estas dos credenciales.
+
+**Limitaciones de seguridad:** estos controles son para un **prototipo académico local**, no constituyen una solución lista para Internet. Antes de desplegar con datos reales faltan HTTPS, limitación de intentos, auditoría de accesos, política de retención/supresión, evaluación de seguridad, estrategia de respaldo y autorización por empresa si se implementan múltiples administradores. No subir CV reales, datos personales ni bases de datos al repositorio público.
 
 ## CurriculAi 3.5 — perfil laboral y ranking
 
@@ -95,10 +113,10 @@ Las pruebas usan una **base temporal** y simulan el cálculo de embeddings; no s
 - Las dependencias se declaran en `requirements.txt`, incluido `google-genai` (SDK actual utilizado por `servicios/gemini_ia.py`) y `pytest` para pruebas. No instalar `google-generativeai` como reemplazo del SDK nuevo.
 - `GEMINI_MODEL=gemini-3.8-flash` es el valor de ejemplo en `.env.example` y el valor predeterminado del servicio. Requiere `GEMINI_API_KEY` y acceso habilitado por Google para la cuenta. Si la cuenta no dispone del modelo, selecciona uno **realmente disponible en tu proyecto**, actualiza `.env` y reinicia FastAPI. No publiques tu clave.
 - El modelo de similitud (distinto a Gemini) se configura opcionalmente con `EMBEDDINGS_MODEL`; su primera descarga requiere conexión a Internet.
-- En CurriculAi 3.8 se ejecutaron **28 pruebas exitosas** con SQLite aislado y simulaciones; esta cifra es una evidencia del corte y puede crecer con nuevos tests. La integración real con Supabase, Gemini y UltraMsg requiere pruebas separadas.
+- En el **corte histórico 3.8** se ejecutaron **28 pruebas** con SQLite aislado y simulaciones; **no es el conteo de la versión actual**. Para registrar el número vigente, ejecuta `python -m pytest -q tests` en el commit que se entregue y anota el resultado junto al SHA. La integración real con Supabase, Gemini y UltraMsg requiere pruebas separadas.
 - Cuando falle el endpoint de ranking, FastAPI devuelve `500` en lugar de simular que no hay candidatos; las pantallas Radar y Vacantes muestran ese error explícitamente.
 
-El procedimiento de aceptación manual, las capturas previstas y la trazabilidad de pruebas se describen en `docs/PLAN_EVIDENCIAS_MVP.md`. Las capturas y datos usados para demostración deben ser ficticios.
+La evidencia histórica del MVP administrativo está en [`docs/cierre_mvp_2026-10-26/README.md`](docs/cierre_mvp_2026-10-26/README.md). Revisa que esa ruta exista en el commit final; el documento histórico no sustituye las pruebas de la versión con portal. Usa únicamente datos ficticios en las capturas.
 
 ## Uso de IA en el desarrollo
 
