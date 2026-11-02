@@ -215,7 +215,10 @@ async def cargar_cvs_al_pool(files: List[UploadFile] = File(...), db: Session = 
 
 @app.delete("/api/v1/limpiar-pool")
 def limpiar_todos_los_candidatos(db: Session = Depends(database.get_db)):
-    """Limpia todos los candidatos, no solo el último de una lista."""
+    """Limpia el pool únicamente si no hay postulaciones vinculadas al portal."""
+    from servicios.portal_oportunidades import PostulacionPortal
+    if db.query(PostulacionPortal).first() is not None:
+        raise HTTPException(status_code=409, detail="Existen postulaciones del portal. No se puede vaciar el pool sin gestionar esos vínculos")
     try:
         db.query(database.MensajeWhatsApp).filter(
             database.MensajeWhatsApp.candidato_id.isnot(None)
@@ -261,6 +264,9 @@ def eliminar_candidato(candidato_id: int, db: Session = Depends(database.get_db)
     candidato = db.get(database.Candidato, candidato_id)
     if candidato is None:
         raise HTTPException(status_code=404, detail="Candidato no encontrado")
+    from servicios.portal_oportunidades import VinculoPortal
+    if db.query(VinculoPortal).filter_by(candidato_id=candidato_id).first() is not None:
+        raise HTTPException(status_code=409, detail="Este candidato está vinculado a una cuenta. Su expediente requiere gestión de postulaciones")
     try:
         db.query(database.MensajeWhatsApp).filter(
             database.MensajeWhatsApp.candidato_id == candidato_id
@@ -284,6 +290,9 @@ def eliminar_cv_candidato(candidato_id: int, db: Session = Depends(database.get_
     candidato = db.get(database.Candidato, candidato_id)
     if candidato is None:
         raise HTTPException(status_code=404, detail="Candidato no encontrado")
+    from servicios.portal_oportunidades import VinculoPortal
+    if db.query(VinculoPortal).filter_by(candidato_id=candidato_id).first() is not None:
+        raise HTTPException(status_code=409, detail="Este CV procede de una cuenta. Debe actualizarse desde el portal del candidato")
     try:
         candidato.nombre_archivo = None
         candidato.archivo_bytes = None
@@ -349,7 +358,11 @@ def eliminar_vacante(vacante_id: int, db: Session = Depends(database.get_db)):
     vacante = db.query(database.Vacante).filter(database.Vacante.id == vacante_id).first()
     if not vacante:
         raise HTTPException(status_code=404, detail="Vacante no encontrada")
+    from servicios.portal_oportunidades import PostulacionPortal, PublicacionVacante
+    if db.query(PostulacionPortal).filter_by(vacante_id=vacante_id).first() is not None:
+        raise HTTPException(status_code=409, detail="Esta vacante tiene postulaciones. Retírala del portal en vez de eliminarla")
     try:
+        db.query(PublicacionVacante).filter_by(vacante_id=vacante_id).delete(synchronize_session=False)
         db.query(database.EntrevistaVacante).filter_by(vacante_id=vacante_id).delete(synchronize_session=False)
         db.query(database.Seguimiento).filter_by(vacante_id=vacante_id).delete(synchronize_session=False)
         db.delete(vacante)
@@ -471,7 +484,12 @@ def agendar_entrevista(req: EntrevistaCreate, db: Session = Depends(database.get
             if registro is None:
                 registro = database.Seguimiento(vacante_id=req.vacante_id, candidato_id=req.candidato_id)
                 db.add(registro)
+            anterior = registro.estado if registro.id is not None else "En revisión"
+            from servicios.portal_oportunidades import notificar_cambio_etapa, notificar_entrevista
+            notificar_cambio_etapa(db, req.vacante_id, req.candidato_id, anterior, "Entrevista")
             registro.estado = "Entrevista"
+            notificar_entrevista(db, req.vacante_id, req.candidato_id, req.fecha, req.hora,
+                                req.lugar or "", "programada")
         db.commit()
     except Exception:
         db.rollback()
@@ -485,9 +503,17 @@ def actualizar_estado_entrevista(entrevista_id: int, req: EntrevistaEstadoUpdate
         raise HTTPException(status_code=404, detail="Entrevista no encontrada")
     if req.estado not in {"Programada", "Confirmada", "Realizada", "Cancelada", "No asistió", "En evaluación", "Finalista", "Aceptado", "Rechazado"}:
         raise HTTPException(status_code=422, detail="Estado de entrevista no permitido")
+    anterior_estado_entrevista = entrevista.estado
     entrevista.estado = req.estado
     entrevista.tipo_finalista = req.tipo_finalista or ""
     try:
+        if anterior_estado_entrevista != req.estado and req.estado in {"Confirmada", "Cancelada"}:
+            from servicios.portal_oportunidades import notificar_entrevista
+            vinc = db.query(database.EntrevistaVacante).filter_by(entrevista_id=entrevista.id).first()
+            if vinc:
+                notificar_entrevista(db, vinc.vacante_id, entrevista.candidato_id,
+                                    entrevista.fecha, entrevista.hora, entrevista.lugar,
+                                    "confirmada" if req.estado == "Confirmada" else "cancelada")
         db.commit()
     except Exception as exc:
         db.rollback()
@@ -606,6 +632,9 @@ def guardar_seguimiento(vacante_id: int, candidato_id: int, req: ActualizarSegui
     if registro is None:
         registro = database.Seguimiento(vacante_id=vacante_id, candidato_id=candidato_id)
         db.add(registro)
+    anterior = registro.estado if registro.id is not None else "En revisión"
+    from servicios.portal_oportunidades import notificar_cambio_etapa
+    notificar_cambio_etapa(db, vacante_id, candidato_id, anterior, req.estado)
     registro.estado = req.estado
     try:
         db.commit()
@@ -649,11 +678,20 @@ def editar_entrevista(entrevista_id: int, req: EntrevistaUpdate,
         raise HTTPException(status_code=422, detail="Fecha u hora inválida")
     if not req.puesto.strip() or not req.lugar.strip():
         raise HTTPException(status_code=422, detail="Puesto y lugar son obligatorios")
+    modificada = any([entrevista.fecha != req.fecha, entrevista.hora != req.hora,
+                      entrevista.lugar != req.lugar.strip()[:500],
+                      entrevista.puesto != req.puesto.strip()[:200]])
     entrevista.puesto = req.puesto.strip()[:200]
     entrevista.fecha = req.fecha
     entrevista.hora = req.hora
     entrevista.lugar = req.lugar.strip()[:500]
     try:
+        if modificada:
+            from servicios.portal_oportunidades import notificar_entrevista
+            vinc = db.query(database.EntrevistaVacante).filter_by(entrevista_id=entrevista.id).first()
+            if vinc:
+                notificar_entrevista(db, vinc.vacante_id, entrevista.candidato_id,
+                                    entrevista.fecha, entrevista.hora, entrevista.lugar, "actualizada")
         db.commit()
     except Exception as exc:
         db.rollback()
@@ -673,6 +711,10 @@ def borrar_entrevista(entrevista_id: int, db: Session = Depends(database.get_db)
         if seguimiento is not None and seguimiento.estado in ("Entrevista", "Finalista", "Aceptado", "Rechazado"):
             seguimiento.estado = "En revisión"
     try:
+        if vinculo is not None:
+            from servicios.portal_oportunidades import notificar_entrevista
+            notificar_entrevista(db, vinculo.vacante_id, entrevista.candidato_id,
+                                entrevista.fecha, entrevista.hora, entrevista.lugar, "cancelada")
         db.query(database.MensajeEntrevista).filter_by(entrevista_id=entrevista_id).delete(synchronize_session=False)
         db.query(database.EntrevistaVacante).filter_by(entrevista_id=entrevista_id).delete(synchronize_session=False)
         db.delete(entrevista)
@@ -690,6 +732,7 @@ def decidir_entrevista(entrevista_id: int, req: EntrevistaEstadoUpdate,
     entrevista = db.get(database.Entrevista, entrevista_id)
     if entrevista is None:
         raise HTTPException(status_code=404, detail="Entrevista no encontrada")
+    estado_anterior = entrevista.estado
     entrevista.estado = req.estado
     # Sólo los finalistas o aceptados conservan esta etiqueta.
     entrevista.tipo_finalista = (req.tipo_finalista or "En evaluación") if req.estado in ("Finalista", "Aceptado") else ""
@@ -704,10 +747,26 @@ def decidir_entrevista(entrevista_id: int, req: EntrevistaEstadoUpdate,
             if seguimiento is None:
                 seguimiento = database.Seguimiento(vacante_id=vinculo.vacante_id, candidato_id=entrevista.candidato_id)
                 db.add(seguimiento)
+            anterior = seguimiento.estado if seguimiento.id is not None else "En revisión"
+            from servicios.portal_oportunidades import notificar_cambio_etapa
+            if req.estado != "Cancelada":
+                notificar_cambio_etapa(db, vinculo.vacante_id, entrevista.candidato_id, anterior, etapa)
             seguimiento.estado = etapa
+    if vinculo is not None and req.estado in {"Confirmada", "Cancelada"} and estado_anterior != req.estado:
+        from servicios.portal_oportunidades import notificar_entrevista
+        notificar_entrevista(db, vinculo.vacante_id, entrevista.candidato_id,
+                            entrevista.fecha, entrevista.hora, entrevista.lugar,
+                            "confirmada" if req.estado == "Confirmada" else "cancelada")
     try:
         db.commit()
     except Exception as exc:
         db.rollback()
         raise HTTPException(status_code=500, detail="No se pudo guardar la decisión") from exc
     return {"mensaje": "Decisión guardada", "estado": entrevista.estado}
+
+# --- Portal del candidato y administración de postulaciones ---
+# Los endpoints ADMIN requieren X-API-Key; el portal usa Bearer individual.
+from servicios.portal_auth import montar_portal
+from servicios.portal_oportunidades import registrar_admin_oportunidades
+registrar_admin_oportunidades(app, exigir_administrador)
+montar_portal(app)

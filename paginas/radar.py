@@ -1,105 +1,190 @@
+"""Radar de talentos: tarjetas compactas en el estilo de Expedientes.
+
+Mantiene las rutas protegidas y el contrato render(ctx) de CurriculAi.
+"""
+from __future__ import annotations
+
 import math
+from html import escape
+
 import streamlit as st
-from servicios.api import api_get_respuesta, api_post
-from servicios.ui_helpers import seguro
+
+from servicios.api import api_get, api_post
 
 
-def _err(r):
-    if r is None:
-        return "API sin conexión."
+def _seguro(valor, limite=180):
+    return escape(str(valor or "")[:limite], quote=True)
+
+
+def _error_respuesta(respuesta):
+    if respuesta is None:
+        return "No fue posible conectar con FastAPI."
     try:
-        return str(r.json().get("detail") or r.text)[:300]
-    except Exception:
-        return str(getattr(r, "text", "Error"))[:300]
+        detalle = respuesta.json().get("detail")
+        return str(detalle or respuesta.text)[:350]
+    except (ValueError, AttributeError):
+        return str(getattr(respuesta, "text", "Error desconocido"))[:350]
 
 
-def _paginate(items, key, per_page=5):
-    total = max(1, math.ceil(len(items) / per_page))
-    page = min(max(1, st.session_state.get(key, 1)), total)
-    st.session_state[key] = page
-    return items[(page - 1) * per_page: page * per_page], page, total
+def _porcentaje(registro):
+    """La API actual entrega score_similitud en escala porcentual 0–100."""
+    valor = registro.get("score_similitud")
+    if valor is None:
+        return None
+    try:
+        numero = float(valor)
+        if not math.isfinite(numero):
+            return None
+        return max(0.0, min(100.0, numero))
+    except (TypeError, ValueError):
+        return None
+
+
+def _texto_candidato(registro, candidatos):
+    """Complementa solo campos presentes en los datos que el backend ya autorizó."""
+    cid = registro.get("candidato_id")
+    candidato = next(
+        (c for c in candidatos if str(c.get("id")) == str(cid)),
+        {},
+    )
+    return {
+        "id": cid,
+        "nombre": registro.get("candidato_nombre") or candidato.get("nombre") or "Candidato",
+        "perfil": registro.get("perfil_destacado") or candidato.get("perfil_destacado") or "Perfil laboral",
+        "skills": registro.get("skills") or candidato.get("skills") or "Sin habilidades registradas",
+        "email": registro.get("email") or candidato.get("email") or "Sin correo",
+        "telefono": registro.get("telefono") or candidato.get("telefono") or "Sin teléfono",
+    }
+
+
+def _tarjeta(registro, numero, candidatos, vacante_id):
+    datos = _texto_candidato(registro, candidatos)
+    puntaje = _porcentaje(registro)
+    texto_puntaje = "Por evaluar" if puntaje is None else f"Compatibilidad {puntaje:.1f}%"
+    porcentaje_largo = "—" if puntaje is None else f"{puntaje:.1f}%"
+
+    st.markdown(
+        '<div class="cai-item-card">'
+        '<div class="cai-item-banner">'
+        '<div>'
+        f'<div class="cai-pretitle">RESULTADO #{numero}</div>'
+        f'<div class="cai-title">{_seguro(datos["nombre"], 90)}</div>'
+        '</div>'
+        '<span class="cai-icon">◎</span>'
+        '</div>'
+        '<div class="cai-item-body">'
+        f'<span class="cai-tag">{_seguro(datos["perfil"], 65)}</span>'
+        f'<div class="cai-item-meta">{_seguro(datos["email"], 75)} · {_seguro(datos["telefono"], 35)}</div>'
+        f'<div class="cai-item-copy">{_seguro(datos["skills"], 220)}</div>'
+        '<div style="display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;margin-top:12px">'
+        f'<span class="cai-tag gold">{_seguro(texto_puntaje)}</span>'
+        f'<strong style="font-size:1.4rem;color:#173a62">{_seguro(porcentaje_largo)}</strong>'
+        '</div>'
+        '</div></div>',
+        unsafe_allow_html=True,
+    )
+    with st.expander("Explicación del resultado"):
+        st.write(registro.get("resumen") or "No hay fragmento disponible.")
+        st.caption(registro.get("justificacion") or "Sin explicación adicional.")
+        if puntaje is not None:
+            st.progress(puntaje / 100)
+            st.caption("Similitud semántica orientativa: no representa una probabilidad de contratación.")
+        else:
+            st.caption("Este candidato todavía no tiene un porcentaje registrado.")
 
 
 def render(ctx):
+    """Punto de entrada requerido por app.py: PANTALLAS['Radar de talentos']."""
     vacantes = ctx.get("vacantes") or []
-    st.markdown('<div class="cai-intro"><div><div class="cai-kicker">MOTOR DE FILTRADO CURRICULAR</div><h1>Radar de talentos</h1><p class="cai-descripcion">Consulta el ranking semántico por vacante y revisa por qué un perfil es compatible.</p></div></div>', unsafe_allow_html=True)
+    candidatos = ctx.get("candidatos") or []
+    st.markdown(
+        '<div class="cai-intro"><div>'
+        '<div class="cai-kicker">MOTOR DE FILTRADO CURRICULAR</div>'
+        '<h1>Radar de talentos</h1>'
+        '<p class="cai-descripcion">Consulta perfiles por vacante, ordenados por similitud semántica.</p>'
+        '</div></div>',
+        unsafe_allow_html=True,
+    )
     if not vacantes:
-        st.info("Primero registra una vacante.")
+        st.info("Primero registra una vacante para utilizar el Radar.")
         return
 
-    opciones = {f"{v.get('titulo') or 'Vacante'} · #{v.get('id')}": v for v in vacantes}
-    seleccion = st.selectbox("Vacante a evaluar", list(opciones))
-    vac = opciones[seleccion]
-    vid = vac.get("id")
+    opciones = {
+        f"{v.get('titulo') or 'Vacante'} · #{v.get('id')}": v
+        for v in vacantes
+    }
+    opcion = st.selectbox("Vacante para evaluar", list(opciones), key="radar_vacante_elegida")
+    vacante_id = opciones[opcion].get("id")
 
-    c1, c2 = st.columns(2, gap="small")
-    with c1:
+    a, b = st.columns(2, gap="small")
+    with a:
         if st.button("Evaluar todos los CV con IA", type="primary", use_container_width=True):
-            with st.spinner("Ejecutando motor semántico..."):
-                r = api_post(f"/api/v1/evaluar/{vid}")
-            if r is not None and r.ok:
-                data = r.json()
-                st.success(f"Evaluación terminada: {data.get('evaluados', 0)} CV procesados.")
-                omitidos = data.get("omitidos_sin_perfil", data.get("omitidos_sin_texto", 0))
+            with st.spinner("Evaluando perfiles..."):
+                respuesta = api_post(f"/api/v1/evaluar/{vacante_id}")
+            if respuesta is not None and respuesta.ok:
+                try:
+                    datos = respuesta.json()
+                except ValueError:
+                    datos = {}
+                st.success(f"Evaluación terminada: {datos.get('evaluados', 0)} CV procesados.")
+                omitidos = datos.get("omitidos_sin_perfil", datos.get("omitidos_sin_texto", 0))
                 if omitidos:
-                    st.warning(f"{omitidos} perfiles no tienen información profesional suficiente para un cálculo orientativo. Revisa o edita sus expedientes.")
+                    st.warning(f"{omitidos} expedientes no cuentan con texto suficiente para evaluarse.")
             else:
-                st.error(_err(r))
-    with c2:
+                st.error(_error_respuesta(respuesta))
+    with b:
         if st.button("Abrir vacante y gestionarla", use_container_width=True):
-            st.session_state["vacante_activa"] = vid
+            st.session_state["vacante_activa"] = vacante_id
             navegar = ctx.get("navegar")
             if callable(navegar):
                 navegar("Vacantes")
 
-    respuesta_ranking = api_get_respuesta(f"/api/v1/ranking/{vid}")
-    if respuesta_ranking is None:
-        st.error("No se pudo conectar al backend para consultar el ranking.")
+    registros = api_get(f"/api/v1/ranking/{vacante_id}", [])
+    if not isinstance(registros, list):
+        st.error("No se pudo obtener el ranking. Comprueba la conexión con FastAPI.")
         return
-    if not respuesta_ranking.ok:
-        st.error(f"No fue posible consultar el ranking (HTTP {respuesta_ranking.status_code}). Revisa FastAPI.")
-        return
-    try:
-        ranking = respuesta_ranking.json()
-    except ValueError:
-        st.error("El servidor devolvió una respuesta inválida al consultar el ranking.")
-        return
-    ranking = ranking if isinstance(ranking, list) else []
-    if not ranking:
-        st.info("Aún no hay resultados. Ejecuta primero la evaluación con IA.")
+    if not registros:
+        st.info("Aún no hay resultados para esta vacante. Ejecuta primero la evaluación con IA.")
         return
 
+    registros = sorted(
+        registros,
+        key=lambda x: _porcentaje(x) if isinstance(x, dict) and _porcentaje(x) is not None else -1,
+        reverse=True,
+    )
     st.markdown('<div class="cai-section">Resultados del ranking</div>', unsafe_allow_html=True)
-    buscar = st.text_input("Buscar dentro del ranking", placeholder="Nombre, habilidades o correo...")
-    if buscar.strip():
-        q = buscar.casefold().strip()
-        ranking = [r for r in ranking if q in " ".join(str(r.get(k) or "") for k in ("candidato_nombre", "skills", "email")).casefold()]
+    busqueda = st.text_input(
+        "Buscar dentro del ranking", placeholder="Nombre, habilidades o correo...", key="radar_busqueda"
+    )
+    if busqueda.strip():
+        consulta = busqueda.strip().casefold()
+        registros = [
+            r for r in registros
+            if consulta in " ".join(str(r.get(k) or "") for k in (
+                "candidato_nombre", "skills", "email", "perfil_destacado"
+            )).casefold()
+        ]
 
-    items, pagina, total = _paginate(ranking, f"page_ranking_{vid}", per_page=5)
-    st.caption(f"{len(ranking)} perfil(es) · página {pagina} de {total}")
-    n1, n2 = st.columns(2)
-    with n1:
-        if st.button("← Anterior", key=f"rank_prev_{vid}", disabled=pagina <= 1):
-            st.session_state[f"page_ranking_{vid}"] = pagina - 1
+    por_pagina = 4
+    paginas = max(1, math.ceil(len(registros) / por_pagina))
+    clave_pagina = f"radar_pagina_{vacante_id}"
+    pagina = max(1, min(int(st.session_state.get(clave_pagina, 1)), paginas))
+    st.session_state[clave_pagina] = pagina
+    st.caption(f"{len(registros)} perfil(es) · página {pagina} de {paginas}")
+    p1, p2 = st.columns(2)
+    with p1:
+        if st.button("← Anterior", key=f"radar_anterior_{vacante_id}", disabled=pagina == 1):
+            st.session_state[clave_pagina] = pagina - 1
             st.rerun()
-    with n2:
-        if st.button("Siguiente →", key=f"rank_next_{vid}", disabled=pagina >= total):
-            st.session_state[f"page_ranking_{vid}"] = pagina + 1
+    with p2:
+        if st.button("Siguiente →", key=f"radar_siguiente_{vacante_id}", disabled=pagina >= paginas):
+            st.session_state[clave_pagina] = pagina + 1
             st.rerun()
 
-    for idx, item in enumerate(items, start=(pagina - 1) * 5 + 1):
-        score = max(0.0, min(100.0, float(item.get("score_similitud") or 0)))
-        st.markdown(
-            f'<div class="cai-outline-box"><strong>{idx}. {seguro(item.get("candidato_nombre") or "Candidato", 100)}</strong><br>'
-            f'<span class="cai-subtle">{seguro(item.get("skills") or "Sin habilidades", 220)}</span><br>'
-            f'<div style="display:flex;justify-content:space-between;gap:18px;align-items:center;margin-top:10px;flex-wrap:wrap;">'
-            f'<div style="flex:1 1 420px"><span class="cai-tag gold">Compatibilidad {score:.1f}%</span></div>'
-            f'<div style="font-size:2.2rem;font-weight:800;color:#173a62;">{score:.1f}%</div></div></div>',
-            unsafe_allow_html=True,
-        )
-        st.progress(score / 100)
-        with st.expander("Explicación del resultado"):
-            st.write(item.get("resumen") or "Sin resumen disponible.")
-            st.caption(item.get("justificacion") or "Sin explicación adicional.")
-            st.write("**Correo:**", item.get("email") or "N/A")
-            st.write("**Teléfono:**", item.get("telefono") or "N/A")
+    visibles = registros[(pagina - 1) * por_pagina: pagina * por_pagina]
+    for fila in range(0, len(visibles), 2):
+        columnas = st.columns(2, gap="large")
+        for desplazamiento, registro in enumerate(visibles[fila: fila + 2]):
+            numero = (pagina - 1) * por_pagina + fila + desplazamiento + 1
+            with columnas[desplazamiento]:
+                _tarjeta(registro, numero, candidatos, vacante_id)

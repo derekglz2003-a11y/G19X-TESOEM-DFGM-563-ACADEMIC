@@ -71,8 +71,36 @@ def render(ctx):
             else:
                 st.error(_err(r))
 
+    # Cuentas creadas desde el portal: aparecen incluso sin haber enviado un CV.
+    # Sólo se comparten los datos administrativos mínimos; nunca hashes ni sesiones.
+    cuentas = api_get("/api/v1/portal-candidatos", [])
+    if isinstance(cuentas, list):
+        with st.expander(f"Cuentas registradas en el portal ({len(cuentas)})", expanded=not bool(candidatos)):
+            st.caption("Registrarse no equivale a postularse. El CV entra al pool cuando el usuario se postula voluntariamente.")
+            if not cuentas:
+                st.info("Todavía no hay cuentas del portal.")
+            for i in range(0, len(cuentas), 2):
+                columnas = st.columns(2, gap="medium")
+                for columna, cuenta in zip(columnas, cuentas[i:i + 2]):
+                    with columna:
+                        estado_cuenta = "CV en perfil" if cuenta.get("cv_cargado") else "Sin CV"
+                        expediente_id = cuenta.get("expediente_administrativo_id")
+                        etapa = "Postulante vinculado" if expediente_id else "Cuenta registrada"
+                        st.markdown(
+                            f'<div class="cai-item-card"><div class="cai-item-banner">'
+                            f'<div><div class="cai-pretitle">USUARIO DEL PORTAL</div>'
+                            f'<div class="cai-title">{_txt(cuenta.get("nombre"), 70)}</div></div></div>'
+                            f'<div class="cai-item-body"><span class="cai-tag">{_txt(etapa)}</span>'
+                            f'<div class="cai-item-meta">{_txt(cuenta.get("correo"), 90)}</div>'
+                            f'<div class="cai-item-copy">{_txt(estado_cuenta)} · '
+                            f'{int(cuenta.get("postulaciones") or 0)} postulación(es)</div></div></div>',
+                            unsafe_allow_html=True,
+                        )
+    else:
+        st.error("No se pudo consultar el listado de cuentas del portal.")
+
     if not candidatos:
-        st.info("Todavía no hay candidatos registrados.")
+        st.info("Todavía no hay expedientes compartidos para evaluación. Las cuentas registradas se muestran arriba.")
         return
 
     st.markdown('<div class="cai-section">Expedientes registrados</div>', unsafe_allow_html=True)
