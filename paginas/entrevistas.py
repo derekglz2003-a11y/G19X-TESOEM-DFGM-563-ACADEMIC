@@ -106,6 +106,7 @@ def render(ctx):
                 else:
                     st.error(_err(r))
 
+    st.markdown(_ESTILOS_TARJETAS, unsafe_allow_html=True)
     st.markdown('<div class="cai-section">Agenda y estados</div>', unsafe_allow_html=True)
     if not entrevistas:
         st.info("No hay entrevistas registradas.")
@@ -148,75 +149,145 @@ def render(ctx):
         if clave not in msg_por_entrevista or creado > str(msg_por_entrevista[clave].get("creado_en") or ""):
             msg_por_entrevista[clave] = m
 
-    for e in items:
-        eid = e.get("id")
-        estado = str(e.get("estado") or "Programada")
-        ultimo = msg_por_entrevista.get(str(eid))
-        chip = f"WhatsApp: {ultimo.get('estado')}" if ultimo else "WhatsApp: sin envío verificado para esta cita"
+    # Dos tarjetas por fila, igual que Radar y Candidatos.
+    columnas = st.columns(2, gap="medium")
+    for indice, entrevista in enumerate(items):
+        with columnas[indice % 2]:
+            _tarjeta_entrevista(entrevista, candidatos, msg_por_entrevista)
+
+
+# La hoja de estilos afecta exclusivamente a las tarjetas de esta pagina.
+_ESTILOS_TARJETAS = """
+<style>
+.cai-ent-cabecera {
+    background: #193b64;
+    color: #fff;
+    border-radius: 11px 11px 0 0;
+    margin: -1rem -1rem 0.95rem;
+    padding: 15px 18px;
+    min-height: 85px;
+}
+.cai-ent-etiqueta {font-size: .68rem; letter-spacing: .11em; font-weight: 800; color: #d6eaff;}
+.cai-ent-nombre {font-weight: 800; font-size: 1.15rem; margin-top: 4px; line-height: 1.3;}
+.cai-ent-fila {display:flex; flex-wrap:wrap; align-items:center; gap:8px; margin-bottom:9px;}
+.cai-ent-rol {background:#eaf2f9; color:#16385c; border-radius:999px; padding:5px 11px; font-size:.78rem; font-weight:700;}
+.cai-ent-estado {border-radius:999px; padding:5px 11px; font-size:.78rem; font-weight:800;}
+.cai-ent-dato {font-size:.87rem; color:#284866; line-height:1.6;}
+.cai-ent-suave {font-size:.78rem; color:#6b8195; margin:8px 0 10px; line-height:1.5;}
+.cai-ent-acciones {font-size:.70rem; color:#6b8195; font-weight:700; letter-spacing:.04em; margin:7px 0 3px;}
+</style>
+"""
+
+
+def _tarjeta_entrevista(e: dict, candidatos: list, msg_por_entrevista: dict):
+    """Tarjeta compacta; conserva todas las operaciones originales de la API."""
+    eid = e.get("id")
+    estado = str(e.get("estado") or "Programada")
+    ultimo = msg_por_entrevista.get(str(eid))
+    chip = f"WhatsApp: {ultimo.get('estado')}" if ultimo else "WhatsApp: sin envío verificado para esta cita"
+
+    # Los colores son solamente informativos, no afectan a los estados del backend.
+    colores = {
+        "Programada": ("#e8f1ff", "#164ea6"),
+        "Confirmada": ("#e0f4ea", "#166b44"),
+        "Realizada": ("#e7f3ec", "#176b44"),
+        "Finalista": ("#f1e9ff", "#6436a7"),
+        "Cancelada": ("#fde8e8", "#9d3030"),
+        "No asistió": ("#fff0df", "#986018"),
+        "Aceptado": ("#e0f4ea", "#166b44"),
+        "Rechazado": ("#fde8e8", "#9d3030"),
+    }
+    fondo_estado, texto_estado = colores.get(estado, ("#eaf2f9", "#16385c"))
+
+    with st.container(border=True):
         st.markdown(
-            f'<div class="cai-outline-box"><div style="display:flex;justify-content:space-between;gap:15px;align-items:flex-start;flex-wrap:wrap;">'
-            f'<div><div style="font-size:1.15rem;font-weight:800;color:#173a62;">{seguro(e.get("nombre") or "Candidato", 80)}</div><div class="cai-subtle">{seguro(e.get("puesto") or "Sin puesto", 80)}</div></div>'
-            f'<div><strong>{seguro(e.get("fecha"), 15)} · {seguro(e.get("hora"), 12)}</strong><br><span class="cai-subtle">{seguro(e.get("lugar") or "Sin lugar", 90)}</span></div>'
-            f'<div><span class="cai-tag">{seguro(estado, 35)}</span><br><span class="cai-mini-note">{seguro(chip, 65)}</span></div></div></div>',
+            f'<div class="cai-ent-cabecera">'
+            f'<div class="cai-ent-etiqueta">ENTREVISTA #{seguro(eid, 15)}</div>'
+            f'<div class="cai-ent-nombre">{seguro(e.get("nombre") or "Candidato", 90)}</div>'
+            f'</div>'
+            f'<div class="cai-ent-fila">'
+            f'<span class="cai-ent-rol">{seguro(e.get("puesto") or "Sin puesto", 75)}</span>'
+            f'<span class="cai-ent-estado" style="background:{fondo_estado};color:{texto_estado}">'
+            f'{seguro(estado, 30)}</span></div>'
+            f'<div class="cai-ent-dato"><strong>Fecha:</strong> {seguro(e.get("fecha") or "Por definir", 20)}'
+            f' &nbsp;·&nbsp; <strong>Hora:</strong> {seguro(e.get("hora") or "Por definir", 12)}</div>'
+            f'<div class="cai-ent-dato"><strong>Lugar / enlace:</strong> {seguro(e.get("lugar") or "Por definir", 90)}</div>'
+            f'<div class="cai-ent-suave">{seguro(chip, 130)}</div>'
+            f'<div class="cai-ent-acciones">GESTIONAR ENTREVISTA</div>',
             unsafe_allow_html=True,
         )
-        a1, a2, a3, a4, a5 = st.columns(5, gap="small")
+
+        # Cinco acciones en 2 filas para que se vean bien en una tarjeta de media pantalla.
+        a1, a2, a3 = st.columns(3, gap="small")
         with a1:
-            if st.button("Confirmar", key=f"conf_{eid}", use_container_width=True):
+            if st.button("Confirmar", key=f"ent_conf_{eid}", use_container_width=True):
                 r = api_put(f"/api/v1/entrevistas/{eid}/decision", {"estado": "Confirmada", "tipo_finalista": ""})
-                if r is not None and r.ok: _flash("Entrevista confirmada.")
-                else: st.error(_err(r))
+                if r is not None and r.ok:
+                    _flash("Entrevista confirmada.")
+                else:
+                    st.error(_err(r))
         with a2:
-            if st.button("Realizada", key=f"real_{eid}", use_container_width=True):
+            if st.button("Realizada", key=f"ent_real_{eid}", use_container_width=True):
                 r = api_put(f"/api/v1/entrevistas/{eid}/decision", {"estado": "Realizada", "tipo_finalista": ""})
-                if r is not None and r.ok: _flash("Entrevista actualizada a realizada.")
-                else: st.error(_err(r))
+                if r is not None and r.ok:
+                    _flash("Entrevista actualizada a realizada.")
+                else:
+                    st.error(_err(r))
         with a3:
-            if st.button("Finalista", key=f"final_{eid}", use_container_width=True):
+            if st.button("Finalista", key=f"ent_final_{eid}", use_container_width=True):
                 r = api_put(f"/api/v1/entrevistas/{eid}/decision", {"estado": "Finalista", "tipo_finalista": "En evaluación"})
-                if r is not None and r.ok: _flash("Perfil enviado a finalistas.")
-                else: st.error(_err(r))
-        with a4:
-            if st.button("Cancelar", key=f"cancel_{eid}", use_container_width=True):
+                if r is not None and r.ok:
+                    _flash("Perfil enviado a finalistas.")
+                else:
+                    st.error(_err(r))
+
+        b1, b2 = st.columns(2, gap="small")
+        with b1:
+            if st.button("Cancelar", key=f"ent_cancel_{eid}", use_container_width=True):
                 r = api_put(f"/api/v1/entrevistas/{eid}/decision", {"estado": "Cancelada", "tipo_finalista": ""})
-                if r is not None and r.ok: _flash("Entrevista cancelada.")
-                else: st.error(_err(r))
-        with a5:
-            if st.button("Eliminar", key=f"delent_{eid}", use_container_width=True):
+                if r is not None and r.ok:
+                    _flash("Entrevista cancelada.")
+                else:
+                    st.error(_err(r))
+        with b2:
+            if st.button("Eliminar", key=f"ent_del_{eid}", use_container_width=True):
                 st.session_state[f"preguntar_borrar_entrevista_{eid}"] = True
+
         if st.session_state.get(f"preguntar_borrar_entrevista_{eid}"):
-            st.warning("Vas a borrar la cita y su vínculo con la vacante. El candidato se conservará.")
-            d1, d2 = st.columns(2)
+            st.warning("Se eliminará esta entrevista, pero se conservará al candidato.")
+            d1, d2 = st.columns(2, gap="small")
             with d1:
-                if st.button("Sí, eliminar cita", key=f"si_delent_{eid}", type="primary"):
+                if st.button("Sí, eliminar", key=f"ent_si_del_{eid}", type="primary", use_container_width=True):
                     r = api_delete(f"/api/v1/entrevistas/{eid}")
-                    if r is not None and r.ok: _flash("Entrevista eliminada.")
-                    else: st.error(_err(r))
+                    if r is not None and r.ok:
+                        st.session_state.pop(f"preguntar_borrar_entrevista_{eid}", None)
+                        _flash("Entrevista eliminada.")
+                    else:
+                        st.error(_err(r))
             with d2:
-                if st.button("No, conservar", key=f"no_delent_{eid}"):
+                if st.button("Conservar", key=f"ent_no_del_{eid}", use_container_width=True):
                     st.session_state.pop(f"preguntar_borrar_entrevista_{eid}", None)
                     st.rerun()
 
         with st.expander("Editar y notificar"):
             t1, t2 = st.tabs(["Editar cita", "WhatsApp"])
             with t1:
-                with st.form(f"edit_ent_{eid}"):
-                    c1, c2, c3, c4 = st.columns([1.2, 1, 1, 1.2], gap="small")
-                    with c1:
-                        puesto = st.text_input("Puesto", value=str(e.get("puesto") or ""))
-                    with c2:
-                        fecha = st.date_input("Fecha", value=_fecha(e.get("fecha")))
-                    with c3:
-                        hora = st.time_input("Hora", value=_hora(e.get("hora")))
-                    with c4:
-                        lugar = st.text_input("Lugar / enlace", value=str(e.get("lugar") or "Google Meet"))
-                    guardar = st.form_submit_button("Guardar cambios", type="primary")
+                with st.form(f"ent_edit_{eid}"):
+                    puesto = st.text_input("Puesto", value=str(e.get("puesto") or ""), key=f"ent_puesto_{eid}")
+                    fecha = st.date_input("Fecha", value=_fecha(e.get("fecha")), key=f"ent_fecha_{eid}")
+                    hora = st.time_input("Hora", value=_hora(e.get("hora")), key=f"ent_hora_{eid}")
+                    lugar = st.text_input("Lugar / enlace", value=str(e.get("lugar") or "Google Meet"), key=f"ent_lugar_{eid}")
+                    guardar = st.form_submit_button("Guardar cambios", type="primary", use_container_width=True)
                 if guardar:
-                    r = api_put(f"/api/v1/entrevistas/{eid}", {"puesto": puesto, "fecha": fecha.isoformat(), "hora": hora.strftime("%H:%M"), "lugar": lugar})
+                    r = api_put(
+                        f"/api/v1/entrevistas/{eid}",
+                        {"puesto": puesto, "fecha": fecha.isoformat(), "hora": hora.strftime("%H:%M"), "lugar": lugar},
+                    )
                     if r is not None and r.ok:
                         _flash("Cita actualizada.")
                     else:
                         st.error(_err(r))
+
             with t2:
                 c = next((c for c in candidatos if str(c.get("id")) == str(e.get("candidato_id"))), None)
                 telefono = telefono_mx((c or {}).get("telefono"))
@@ -228,20 +299,24 @@ def render(ctx):
                         f"está programada el {e.get('fecha')} a las {e.get('hora')}, en {e.get('lugar')}. "
                         "Por favor confirma tu asistencia. CurriculAi."
                     )
-                    st.link_button("Abrir conversación en WhatsApp", f"https://wa.me/{telefono}?text={quote(mensaje)}")
-                    st.caption("La apertura de WhatsApp no confirma que el mensaje haya sido enviado.")
-                    if st.button("Enviar con UltraMsg", key=f"wa_{eid}", type="primary", use_container_width=True):
+                    st.link_button(
+                        "Abrir conversación en WhatsApp",
+                        f"https://wa.me/{telefono}?text={quote(mensaje)}",
+                        use_container_width=True,
+                    )
+                    st.caption("Abrir WhatsApp no confirma que el mensaje se haya enviado.")
+                    if st.button("Enviar con UltraMsg", key=f"ent_wa_{eid}", type="primary", use_container_width=True):
                         enviado, detalle, registrado = enviar_invitacion_entrevista(
                             eid, c, e.get("puesto") or "el puesto", e.get("fecha") or "",
-                            e.get("hora") or "", e.get("lugar") or ""
+                            e.get("hora") or "", e.get("lugar") or "",
                         )
                         if enviado:
-                            st.success("Invitación aceptada por UltraMsg. Verifica entrega en el proveedor.")
+                            st.success("Invitación aceptada por UltraMsg. Verifica su entrega.")
                         else:
                             st.error(f"No se pudo enviar: {detalle}")
                         if not registrado:
-                            st.warning("El resultado del envío no pudo guardarse en la bitácora.")
+                            st.warning("No se pudo guardar la bitácora del envío.")
                 if ultimo:
-                    st.caption(f"Último registro vinculado: {ultimo.get('estado')} · {ultimo.get('creado_en') or ''}")
+                    st.caption(f"Último registro: {ultimo.get('estado')} · {ultimo.get('creado_en') or ''}")
                 else:
-                    st.caption("Aún no existe un envío registrado específicamente para esta entrevista.")
+                    st.caption("Aún no hay envío registrado para esta entrevista.")

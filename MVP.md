@@ -1,20 +1,20 @@
 # MVP — CurriculAi
 
 **Producto:** CurriculAi — Optimizador de filtrado curricular mediante IA
-**Versión del documento:** 1.0 · CurriculAi 3.6 (alcance técnico del código 3.5)
-**Fecha de referencia:** 21 de octubre de 2026
-**Estado:** MVP administrativo implementado parcialmente validado; pendiente de aceptación integral
+**Versión del documento:** 2.0 · alcance ampliado del portal del candidato
+**Fecha de referencia:** 2 de noviembre de 2026; incluye antecedentes del corte administrativo 3.8
+**Estado:** MVP administrador + candidato implementado en rama de integración; aceptación final y clon limpio pendientes
 **Documento de requisitos:** [`PRD.md`](PRD.md)
 
 ## 1. Qué entregamos como MVP
 
-Un **prototipo académico de reclutamiento para un administrador** que permite:
+Un **prototipo académico de reclutamiento para administrador y candidatos**, con flujo administrativo:
 
 `Iniciar sesión → Crear vacante → Subir CV → Consultar expediente → Ejecutar ranking semántico → Revisar resultados → Actualizar seguimiento → Agendar entrevista → Decidir etapa final`.
 
 La generación de descripciones con Gemini y el envío automático de WhatsApp mediante UltraMsg son **funciones opcionales**: el flujo central debe poder demostrarse aunque las integraciones no estén configuradas. Ninguna puntuación ejecuta una contratación o un rechazo automático.
 
-El MVP **no** contiene aún portal del candidato ni múltiples usuarios con roles. Estas funciones se documentan como pendientes y no son criterio de aprobación de esta entrega.
+La **rama actual incorpora el portal del candidato** con cuenta y sesión propias, creación manual o carga de CV, compartición explícita con reclutamiento, vacantes publicadas, postulaciones y avisos internos privados. Se trata de dos tipos de acceso, no de cuentas para múltiples empresas ni varios administradores. La validación completa debe realizarse antes de aceptar la entrega.
 
 ## 2. Requisitos mínimos para ejecutar
 
@@ -49,10 +49,16 @@ El MVP **no** contiene aún portal del candidato ni múltiples usuarios con role
 | CA-13 | Descripción con Gemini (P1) | **Dado** un título de puesto y contexto, **cuando** se invoca IA configurada, **entonces** se propone un texto que el humano revisa; sin clave, la API informa indisponibilidad | Ruta implementada y caso sin clave probado; generación real pendiente |
 | CA-14 | Eliminación y confirmación (P0) | **Dado** un expediente o pool de prueba, **cuando** no hay confirmación o clave, **entonces** no debe efectuarse eliminación; con ambas y decisión del admin, se elimina según la operación | UI + API implementadas; validación destructiva solo en BD aislada |
 | CA-15 | Instalación y pruebas (P0) | **Dado** un clon del repositorio sin secretos, **cuando** se configuran dependencias y credenciales de prueba, **entonces** el sistema inicia y el comando de pruebas finaliza sin fallos | Documentado; 28 pruebas aprobadas en entorno aislado al corte 3.8; instalación limpia desde cero pendiente |
+| CA-16 | Registro y perfil candidato (P0 portal) | **Dado** un usuario registrado, **cuando** inicia sesión, **entonces** consulta y edita únicamente su expediente | `portal_auth.py`, `portal_expediente.py`; pruebas del portal; validación manual pendiente |
+| CA-17 | CV manual o cargado (P0 portal) | **Dado** un perfil laboral válido, **cuando** crea CV sin archivo o sube uno legible, **entonces** puede revisarlo y guardarlo | `test_cv_manual_portal.py`, pruebas de extracción |
+| CA-18 | Compartición explícita al ranking (P0 portal) | **Dado** un CV guardado, **cuando** autoriza compartirlo, **entonces** aparece una sola ficha en el pool; los cambios invalidan puntajes anteriores | `portal_oportunidades.py`, prueba E2E de compartición |
+| CA-19 | Vacante publicada y postulación (P0 portal) | **Dada** una vacante publicada expresamente, **cuando** el candidato se postula, **entonces** la ve el administrador y no se duplica la solicitud | Pruebas `test_portal_oportunidades.py` |
+| CA-20 | Entrevistas y avisos privados (P0 portal) | **Dado** un candidato postulado, **cuando** el admin registra cita o decisión, **entonces** el aviso llega a la cuenta correcta y no a otra | `test_flujo_candidato_notificaciones.py` |
+| CA-21 | Navegación candidato (P0 portal) | **Dado** un candidato autenticado, **cuando** cambia de sección, **entonces** ve su apartado y puede cerrar sesión sin entrar al administrador | `test_barra_candidato.py`; revisión visual en Windows |
 
-**P0:** imprescindible para considerar completo el MVP administrativo.
+**P0:** imprescindible para considerar completo el alcance correspondiente, administrativo o del portal.
 **P1:** integración complementaria, operativa solo cuando exista proveedor disponible.
-**P2:** futura versión, no requerida en esta aceptación.
+**P2:** futura versión, no requerida en esta aceptación. Las funciones **P0 (portal)** sí pertenecen al alcance ampliado y deben validarse.
 
 ## 4. Plan de pruebas de aceptación manual
 
@@ -77,7 +83,7 @@ Usa una copia temporal del proyecto con una base **desechable**, dos o tres vaca
 3. Intentar `DELETE /api/v1/limpiar-pool` sin clave: se debe denegar acceso.
 4. Revisar que `.env` esté ignorado y que no exista ninguna credencial real en el commit.
 
-**Resultado esperado:** las rutas operativas no entregan datos sin credenciales. Estas pruebas no implican que el prototipo sea apto para Internet público.
+**Resultado esperado:** las rutas administrativas protegidas no entregan datos sin `X-API-Key` válida y las rutas privadas del portal no entregan datos sin sesión `Bearer` válida. Estas pruebas no implican que el prototipo sea apto para Internet público.
 
 ### Escenario E2E-03 — Extracción imperfecta
 
@@ -105,9 +111,20 @@ Usa una copia temporal del proyecto con una base **desechable**, dos o tres vaca
 
 **Resultado esperado:** el flujo P0 funciona sin depender de servicios de mensajería y generación de texto. La entrega de WhatsApp no se da por confirmada solo por un HTTP exitoso.
 
+### Escenario E2E-06 — Portal de candidato e interacción con administrador
+
+1. Crear dos cuentas ficticias y un CV manual o de prueba para una de ellas.
+2. Comprobar que el CV solo entra al pool al pulsar **Compartir** y que una actualización no duplica expediente ni conserva ranking anterior.
+3. Publicar una vacante desde el administrador; postularse como candidato.
+4. Confirmar que el administrador ve la postulación y puede registrar entrevista y decisión.
+5. Comprobar que el candidato ve sus entrevistas y notificaciones, y que la segunda cuenta no ve esos datos.
+6. Reiniciar servidores y comprobar persistencia en la misma base de pruebas.
+
+**Resultado esperado:** flujo coherente con separación de roles, sin decisiones automáticas por IA.
+
 ## 5. Evidencia automatizada existente
 
-Al corte CurriculAi 3.8 se incluyen `tests/test_api.py`, `tests/test_perfil_laboral.py` y `tests/test_gemini_ia.py`. Se ejecutó `python -m pytest -q tests` sobre una base SQLite aislada y **28 pruebas finalizaron correctamente** durante la preparación del parche. Es necesario repetir este comando en la computadora del responsable y guardar evidencia del resultado. Las pruebas simulan Gemini, embeddings y parte del OCR: no certifican calidad del modelo ni disponibilidad de servicios externos.
+En el **corte histórico CurriculAi 3.8** se incluyen `tests/test_api.py`, `tests/test_perfil_laboral.py` y `tests/test_gemini_ia.py`. Se ejecutó `python -m pytest -q tests` sobre una base SQLite aislada y **28 pruebas finalizaron correctamente** durante la preparación del parche. La cifra de 28 no representa la batería actual; es necesario ejecutar todo el directorio `tests/` en el commit final y registrar su número exacto, fecha y SHA. Las pruebas simulan Gemini, embeddings y parte del OCR: no certifican calidad del modelo ni disponibilidad de servicios externos.
 
 Comando reproducible desde la raíz del repositorio:
 
@@ -136,7 +153,8 @@ Comando reproducible desde la raíz del repositorio:
 | E2E-03 | Tabla de CV ficticios por formato, texto extraído, error si aplica | **Pendiente de medición manual** |
 | E2E-04 | Comparación de ranking antes/después de reevaluar | Pruebas automatizadas disponibles; integración manual pendiente |
 | E2E-05 | Respuesta de Gemini/UltraMsg en entorno de prueba, si se dispone | **Opcional; integración real pendiente** |
-| TA-01 | Captura del terminal con todas las pruebas aprobadas (27 en 3.8) | **Resultado en entorno aislado**; repetir y conservar evidencia del equipo local |
+| E2E-06 | Capturas de registro, CV compartido, postulación, entrevista y avisos con dos cuentas ficticias | **Código y tests disponibles; validación manual sobre commit final** |
+| TA-01 | Captura del terminal con todas las pruebas aprobadas (28 en el corte histórico 3.8; actualizar para el commit final) | **Resultado histórico**; repetir y conservar evidencia del equipo local |
 
 Para cada evidencia se recomienda documentar: fecha, commit, versión de Python, entorno (local/aislado), datos sintéticos utilizados, resultado esperado, resultado observado, errores y responsable que revisó.
 
@@ -144,11 +162,11 @@ Para cada evidencia se recomienda documentar: fecha, commit, versión de Python,
 
 Se considerará **aceptado** cuando:
 
-1. Los 15 criterios CA estén evaluados y **todos los P0** tengan evidencia aprobada; las funcionalidades P1 pueden constar como opcionales/no configuradas.
+1. Los criterios CA-01 a CA-21 estén evaluados y **todos los P0 del alcance administrativo y del portal** tengan evidencia aprobada; las funcionalidades P1 pueden constar como opcionales/no configuradas.
 2. Se registren los resultados de E2E-01 a E2E-04 en base aislada y sin datos reales.
 3. Las pruebas automatizadas se ejecuten sin fallos en el entorno de entrega y se conserve la salida.
 4. Exista trazabilidad con el PRD, README, commits y listado de limitaciones conocidas.
-5. El evaluador o responsable autorizado confirme que el **alcance administrativo** es el alcance evaluado.
+5. El evaluador o responsable autorizado confirme que el **alcance administrador + candidato** es el alcance evaluado.
 
 **Estado de aceptación actual:** **pendiente**. Hay implementación y pruebas automatizadas, pero faltan evidencias manuales y validaciones externas. No se afirma un resultado académico o productivo definitivo.
 
@@ -156,7 +174,7 @@ Se considerará **aceptado** cuando:
 
 | Prioridad futura | Función / mejora | Por qué no está en el MVP actual |
 |---|---|---|
-| P2 | Portal de candidato, inicio de sesión individual y solicitud a vacantes | El MVP es de un administrador; necesita un modelo completo de permisos |
+| P2 | Sistema multiempresa y múltiples administradores | Aún no se gestionan reclutadores independientes por empresa; requiere autorización adicional |
 | P2 | Varios reclutadores, roles, auditoría completa y sesiones robustas | Seguridad adicional de producción |
 | P2 | Más de una entrevista por candidato y por proceso | La tabla actual `Entrevista` limita a una cita por candidato |
 | P2 | Política formal de consentimiento, retención, acceso y supresión de CV | Requiere aprobación organizacional y legal |

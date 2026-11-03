@@ -1,6 +1,6 @@
 """Integración con Google Gen AI SDK para CurriculAi.
 
-Ambas funciones comparten GEMINI_API_KEY y GEMINI_MODEL. El cliente se crea
+Las funciones comparten GEMINI_API_KEY y GEMINI_MODEL. El cliente se crea
 por llamada, sin imprimir credenciales ni respuestas completas en los logs.
 """
 from __future__ import annotations
@@ -26,18 +26,31 @@ def modelo_configurado() -> str:
 
 
 def _cliente_y_tipos():
+    """Inicializa Gemini con límite de espera y un único intento."""
     clave = os.getenv("GEMINI_API_KEY", "").strip()
     if not clave:
-        raise ErrorGemini("Falta GEMINI_API_KEY en el archivo .env.", 503)
+        raise ErrorGemini(
+            "No está configurada GEMINI_API_KEY. Revisa el archivo .env y reinicia FastAPI.",
+            503,
+        )
     try:
         from google import genai
         from google.genai import types
     except ImportError as exc:
         raise ErrorGemini(
-            "Falta instalar google-genai. Ejecuta: python -m pip install -U google-genai",
-            503,
+            "Falta instalar google-genai en el entorno de FastAPI.", 503
         ) from exc
-    return genai.Client(api_key=clave), types
+
+    return (
+        genai.Client(
+            api_key=clave,
+            http_options=types.HttpOptions(
+                timeout=45000,  # Milisegundos: 45 segundos.
+                retry_options=types.HttpRetryOptions(attempts=1),
+            ),
+        ),
+        types,
+    )
 
 
 def _error_amigable(exc: Exception) -> ErrorGemini:
@@ -51,11 +64,27 @@ def _error_amigable(exc: Exception) -> ErrorGemini:
             "Comprueba GEMINI_MODEL en .env y reinicia FastAPI.",
             503,
         )
-    if "401" in estado or "403" in estado or "api key not valid" in resumen or "permission_denied" in nombre:
-        return ErrorGemini("La clave de Gemini es inválida o no tiene acceso al modelo configurado.", 503)
+    if (
+        "401" in estado
+        or "403" in estado
+        or "api key not valid" in resumen
+        or "permission_denied" in nombre
+    ):
+        return ErrorGemini(
+            "La clave de Gemini es inválida o no tiene acceso al modelo configurado.", 503
+        )
     if "429" in estado or "resource_exhausted" in nombre or "quota" in resumen:
-        return ErrorGemini("Se alcanzó el límite de uso de Gemini. Consulta cuotas y vuelve a intentar.", 429)
-    return ErrorGemini("No se pudo obtener respuesta de Gemini. Comprueba la conexión y la configuración del modelo.")
+        return ErrorGemini(
+            "Se alcanzó el límite de uso de Gemini. Consulta cuotas y vuelve a intentar.",
+            429,
+        )
+    if "timeout" in nombre or "timed out" in resumen or "timeout" in resumen:
+        return ErrorGemini(
+            "Gemini tardó demasiado en responder. Intenta nuevamente.", 504
+        )
+    return ErrorGemini(
+        "No se pudo obtener respuesta de Gemini. Comprueba la conexión y la configuración del modelo."
+    )
 
 
 # Cada segmento se evalúa por separado: permite conservar requisitos laborales
@@ -106,8 +135,8 @@ def generar_descripcion_puesto(titulo: str, contexto: str = "", descripcion: str
     titulo_limpio, omitio_titulo = limpiar_requisitos_de_vacante(titulo[:150])
     if not titulo_limpio:
         raise ErrorGemini("Escribe un título laboral sin restricciones personales.", 422)
-    contexto_limpio, omitio_contexto = limpiar_requisitos_de_vacante(contexto[:2500])
-    descripcion_limpia, omitio_desc = limpiar_requisitos_de_vacante(descripcion[:3500])
+    contexto_limpio, omitio_contexto = limpiar_requisitos_de_vacante(str(contexto or "")[:2500])
+    descripcion_limpia, omitio_desc = limpiar_requisitos_de_vacante(str(descripcion or "")[:3500])
 
     cliente, types = _cliente_y_tipos()
     instrucciones = (
@@ -129,6 +158,7 @@ def generar_descripcion_puesto(titulo: str, contexto: str = "", descripcion: str
         f"NECESIDADES LABORALES: {contexto_limpio or 'No especificadas'}\n"
         f"DESCRIPCIÓN ACTUAL: {descripcion_limpia or 'Sin borrador previo'}"
     )
+
     try:
         respuesta = cliente.models.generate_content(
             model=modelo_configurado(),
@@ -140,13 +170,22 @@ def generar_descripcion_puesto(titulo: str, contexto: str = "", descripcion: str
             ),
         )
     except Exception as exc:
+        print(
+            "[Gemini] Error:",
+            type(exc).__name__,
+            "Código:",
+            getattr(exc, "code", None),
+            flush=True,
+        )
         raise _error_amigable(exc) from exc
+
     texto = str(getattr(respuesta, "text", "") or "").strip()
     if not texto:
         raise ErrorGemini("Gemini no devolvió una descripción. Intenta nuevamente.")
     if _RESTRICCIONES_SALIDA.search(texto):
         raise ErrorGemini(
-            "La respuesta contenía criterios personales. No se aplicó; revisa los requisitos y vuelve a generar."
+            "La respuesta contenía criterios personales. No se aplicó; "
+            "revisa los requisitos y vuelve a generar."
         )
     return {
         "descripcion": texto,
@@ -190,4 +229,8 @@ def extraer_datos_cv_gemini(file_bytes: bytes, texto_cv: str, filename: str) -> 
             raise ValueError("Gemini no devolvió un objeto JSON")
         return datos
     except Exception as exc:
+        print(
+            "[Gemini CV] Error:", type(exc).__name__,
+            "Código:", getattr(exc, "code", None), flush=True,
+        )
         raise _error_amigable(exc) from exc

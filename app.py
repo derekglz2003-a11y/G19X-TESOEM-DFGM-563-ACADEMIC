@@ -4,7 +4,9 @@ from dotenv import load_dotenv
 
 from servicios.api import api_get, api_estado
 from servicios.seguridad import acceso_configurado, verificar_contrasena
+from servicios.login_roles import mostrar_login_roles, mostrar_portal_candidato
 from servicios.estilos import aplicar_estilos, aplicar_fondo
+from servicios.barra_admin import aplicar_barra_admin, dibujar_marca_admin, cerrar_sesion_admin
 from paginas import inicio, vacantes, candidatos, radar, entrevistas, finalistas, configuracion
 
 load_dotenv()
@@ -17,6 +19,7 @@ st.set_page_config(
 
 aplicar_estilos()
 aplicar_fondo()
+aplicar_barra_admin()
 
 SECCIONES = ["Inicio", "Vacantes", "Candidatos", "Radar de talentos", "Entrevistas", "Finalistas", "Configuración"]
 PANTALLAS = {
@@ -72,43 +75,44 @@ def cerrar_sesion():
     st.rerun()
 
 
-# No mostrar ni consultar expedientes antes de autenticar al administrador.
-if not acceso_configurado():
-    st.error("Falta configurar el acceso administrativo de CurriculAi.")
-    st.info("En la carpeta del proyecto ejecuta: python scripts/configurar_acceso.py. Después reinicia FastAPI y Streamlit.")
-    st.stop()
+# Acceso aislado por roles. Nunca se consulta la API de administración
+# mientras la sesión sea de un candidato.
+if st.session_state.get("cai_autenticado") and st.session_state.get("cai_usuario_rol") not in ("administrador", "candidato"):
+    st.session_state["cai_autenticado"] = False  # sesión previa a la separación de roles
 
 if not st.session_state.get("cai_autenticado", False):
-    st.markdown('<div style="max-width:500px;margin:38px auto 12px;text-align:center"><h1>CurriculAi</h1><p>Acceso administrativo · Gestión de talento</p></div>', unsafe_allow_html=True)
-    with st.form("cai_form_login"):
-        contrasena = st.text_input("Contraseña de administrador", type="password")
-        entrar = st.form_submit_button("Entrar a CurriculAi", type="primary", use_container_width=True)
-    if entrar:
-        if verificar_contrasena(contrasena):
-            st.session_state["cai_autenticado"] = True
-            st.rerun()
-        else:
-            st.error("Contraseña incorrecta.")
+    mostrar_login_roles(Path(__file__).resolve().parent)
+    st.stop()
+
+if st.session_state.get("cai_usuario_rol") == "candidato":
+    mostrar_portal_candidato()
+    st.stop()
+
+if not acceso_configurado():
+    st.error("Acceso de administrador sin configurar. Revisa .env y reinicia el sistema.")
     st.stop()
 
 codigo_estado = api_estado()
 conectada = codigo_estado == 200
 
 with st.container(key="cai_topbar"):
-    marca, nav, acciones = st.columns([1.6, 7.4, 0.8], vertical_alignment="center", gap="small")
+    marca, nav, acciones = st.columns([2.15, 7.35, 1.30], vertical_alignment="center", gap="small")
     with marca:
-        logo_cols = st.columns([0.47, 1.1], gap="small", vertical_alignment="center")
-        with logo_cols[0]:
-            archivo_logo = buscar_logo()
-            if archivo_logo:
-                st.image(str(archivo_logo), width=54)
-            else:
-                st.markdown('<div style="width:54px;height:54px;border-radius:10px;background:white;display:flex;align-items:center;justify-content:center;color:#173a62;font-weight:800;font-size:1.4rem;">CA</div>', unsafe_allow_html=True)
-        with logo_cols[1]:
-            st.markdown('<div class="cai-brand-wrap"><div><div class="cai-brand-title">CurriculAi</div><div class="cai-brand-sub">Talent intelligence</div></div></div>', unsafe_allow_html=True)
+        dibujar_marca_admin(buscar_logo())
     with nav:
-        seccion = st.radio("Navegación principal", SECCIONES, horizontal=True, key="menu_principal", label_visibility="collapsed")
+        # Botones con apariencia de texto: ningún radio ni círculo de selección.
+        columnas_menu = st.columns([0.75, 1.05, 1.24, 1.93, 1.37, 1.08, 1.60], gap="small")
+        for indice, (columna, nombre) in enumerate(zip(columnas_menu, SECCIONES)):
+            con_estilo = "activa" if st.session_state["menu_principal"] == nombre else "normal"
+            with columna:
+                with st.container(key=f"cai_nav_{con_estilo}_{indice}"):
+                    if st.button(nombre, key=f"cai_nav_ir_{indice}", use_container_width=True):
+                        cambiar_seccion(nombre)
+        seccion = st.session_state["menu_principal"]
     with acciones:
+        # El callback se ejecuta ANTES del rerun: el acceso se cierra realmente.
+        st.button("Cerrar sesión", key="cai_admin_cerrar_sesion", use_container_width=True,
+                  on_click=cerrar_sesion_admin)
         status_class = "ok" if conectada else "error"
         status_text = "● Conectado" if conectada else "● Sin conexión"
         st.markdown(
