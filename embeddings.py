@@ -8,7 +8,7 @@ _model_name = None
 
 def obtener_modelo():
     global _model, _model_name
-    nombre = os.getenv("EMBEDDINGS_MODEL", "sentence-transformers/all-MiniLM-L6-v2").strip()
+    nombre = os.getenv("EMBEDDINGS_MODEL", "").strip() or "sentence-transformers/all-MiniLM-L6-v2"
     if _model is None or _model_name != nombre:
         _model = SentenceTransformer(nombre)
         _model_name = nombre
