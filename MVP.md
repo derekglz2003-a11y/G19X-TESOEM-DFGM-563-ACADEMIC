@@ -1,9 +1,9 @@
 # MVP — CurriculAi
 
 **Producto:** CurriculAi — Optimizador de filtrado curricular mediante IA
-**Versión del documento:** 2.0 · alcance ampliado del portal del candidato
-**Fecha de referencia:** 2 de noviembre de 2026; incluye antecedentes del corte administrativo 3.8
-**Estado:** MVP administrador + candidato implementado en rama de integración; aceptación final y clon limpio pendientes
+**Versión del documento:** 2.1 · revisión 7 del alcance administrador + candidato
+**Fecha de referencia:** 7 de noviembre de 2026; antecedentes administrativos 3.8 conservados
+**Estado:** MVP administrador + candidato en el alcance actual; 50 pruebas locales aprobadas; aceptación manual, servicios externos y clon limpio pendientes
 **Documento de requisitos:** [`PRD.md`](PRD.md)
 
 ## 1. Qué entregamos como MVP
@@ -14,14 +14,14 @@ Un **prototipo académico de reclutamiento para administrador y candidatos**, co
 
 La generación de descripciones con Gemini y el envío automático de WhatsApp mediante UltraMsg son **funciones opcionales**: el flujo central debe poder demostrarse aunque las integraciones no estén configuradas. Ninguna puntuación ejecuta una contratación o un rechazo automático.
 
-La **rama actual incorpora el portal del candidato** con cuenta y sesión propias, creación manual o carga de CV, compartición explícita con reclutamiento, vacantes publicadas, postulaciones y avisos internos privados. Se trata de dos tipos de acceso, no de cuentas para múltiples empresas ni varios administradores. La validación completa debe realizarse antes de aceptar la entrega.
+El **alcance actual incorpora el portal del candidato** con cuenta y sesión propias, creación manual o carga de CV, compartición explícita con reclutamiento, vacantes publicadas, postulaciones y avisos internos privados. Se trata de dos tipos de acceso, no de cuentas para múltiples empresas ni varios administradores. La validación completa debe realizarse antes de aceptar la entrega.
 
 ## 2. Requisitos mínimos para ejecutar
 
 - Python **3.11 recomendado**, con dependencias de `requirements.txt`.
 - Dos procesos: FastAPI (`main.py`) y Streamlit (`app.py`).
-- Archivo `.env` privado para `ADMIN_PASSWORD_HASH`, `ADMIN_API_KEY` y, cuando corresponda, `DATABASE_URL` remota. No incluir `.env` en Git.
-- SQLite **de pruebas** o PostgreSQL por `DATABASE_URL`; nunca reutilizar la base de producción para pruebas destructivas.
+- Archivo `.env` privado para `ADMIN_PASSWORD_HASH`, `ADMIN_API_KEY` y `DATABASE_URL` (SQLite de referencia o PostgreSQL opcional). No incluir `.env` en Git.
+- **SQLite es la base de referencia de la entrega reproducible**, mediante `DATABASE_URL=sqlite:///./motor_cv.db` (valor de referencia de `.env.example`); PostgreSQL/Supabase es **opcional**. Comprobar el `.env` privado antes de una prueba, porque no se ha verificado qué base utiliza el equipo local. Nunca reutilizar una base de producción para pruebas destructivas.
 - Descarga inicial del modelo `sentence-transformers/all-MiniLM-L6-v2`, que requiere conexión a Internet; tras descargarlo podrá reutilizarse localmente.
 - Tesseract instalado solo para OCR real de imágenes y PDF escaneados.
 - Gemini y UltraMsg solo cuando se quiera probar sus integraciones.
@@ -48,7 +48,7 @@ La **rama actual incorpora el portal del candidato** con cuenta y sesión propia
 | CA-12 | Bitácora WhatsApp (P1) | **Dada** una acción de mensajería, **cuando** UltraMsg responde, **entonces** se registra estado y respuesta; sin credenciales no se informa falsamente un envío exitoso | Bitácora implementada; envío real externo no validado |
 | CA-13 | Descripción con Gemini (P1) | **Dado** un título de puesto y contexto, **cuando** se invoca IA configurada, **entonces** se propone un texto que el humano revisa; sin clave, la API informa indisponibilidad | Ruta implementada y caso sin clave probado; generación real pendiente |
 | CA-14 | Eliminación y confirmación (P0) | **Dado** un expediente o pool de prueba, **cuando** no hay confirmación o clave, **entonces** no debe efectuarse eliminación; con ambas y decisión del admin, se elimina según la operación | UI + API implementadas; validación destructiva solo en BD aislada |
-| CA-15 | Instalación y pruebas (P0) | **Dado** un clon del repositorio sin secretos, **cuando** se configuran dependencias y credenciales de prueba, **entonces** el sistema inicia y el comando de pruebas finaliza sin fallos | Documentado; 28 pruebas aprobadas en entorno aislado al corte 3.8; instalación limpia desde cero pendiente |
+| CA-15 | Instalación y pruebas (P0) | **Dado** un clon del repositorio sin secretos, **cuando** se configuran dependencias y credenciales de prueba, **entonces** el sistema inicia y el comando de pruebas finaliza sin fallos | **50 pruebas aprobadas y 2 advertencias** en ejecución local del 7-nov-2026, HEAD `c8db09a`; **clon limpio sin validar** |
 | CA-16 | Registro y perfil candidato (P0 portal) | **Dado** un usuario registrado, **cuando** inicia sesión, **entonces** consulta y edita únicamente su expediente | `portal_auth.py`, `portal_expediente.py`; pruebas del portal; validación manual pendiente |
 | CA-17 | CV manual o cargado (P0 portal) | **Dado** un perfil laboral válido, **cuando** crea CV sin archivo o sube uno legible, **entonces** puede revisarlo y guardarlo | `test_cv_manual_portal.py`, pruebas de extracción |
 | CA-18 | Compartición explícita al ranking (P0 portal) | **Dado** un CV guardado, **cuando** autoriza compartirlo, **entonces** aparece una sola ficha en el pool; los cambios invalidan puntajes anteriores | `portal_oportunidades.py`, prueba E2E de compartición |
@@ -122,17 +122,23 @@ Usa una copia temporal del proyecto con una base **desechable**, dos o tres vaca
 
 **Resultado esperado:** flujo coherente con separación de roles, sin decisiones automáticas por IA.
 
-## 5. Evidencia automatizada existente
+## 5. Evidencia automatizada vigente
 
-En el **corte histórico CurriculAi 3.8** se incluyen `tests/test_api.py`, `tests/test_perfil_laboral.py` y `tests/test_gemini_ia.py`. Se ejecutó `python -m pytest -q tests` sobre una base SQLite aislada y **28 pruebas finalizaron correctamente** durante la preparación del parche. La cifra de 28 no representa la batería actual; es necesario ejecutar todo el directorio `tests/` en el commit final y registrar su número exacto, fecha y SHA. Las pruebas simulan Gemini, embeddings y parte del OCR: no certifican calidad del modelo ni disponibilidad de servicios externos.
+**Ejecución local del 7 de noviembre de 2026:** **50 pruebas aprobadas, 0 fallidas, 2 advertencias**, en **36.68 s**. HEAD local consultado: **`c8db09a`**. Resultado visible en la terminal:
 
-Comando reproducible desde la raíz del repositorio:
-
-```powershell
-.\venv\Scripts\python.exe -m pytest -q tests
+```text
+50 passed, 2 warnings in 36.68s
 ```
 
-Áreas cubiertas por esas pruebas:
+Comando ejecutado desde `C:\motorcv` (entorno virtual local `.venv`):
+
+```powershell
+.\.venv\Scripts\python.exe -m pytest -q tests
+```
+
+**Importante:** `git status --short` mostró archivos sin seguimiento; por tanto, el SHA `c8db09a` es la referencia de HEAD del equipo, **no prueba que un clon idéntico del repositorio produzca por sí solo el mismo resultado**. Se debe repetir la batería en una carpeta nueva sin copiar `.env`, `.venv` ni bases locales, y guardar el registro de instalación. La **cifra histórica del corte administrativo 3.8 fue 28 pruebas**; es antecedente y **no** sustituye las 50 pruebas vigentes.
+
+Áreas cubiertas por las pruebas automatizadas (con partes simuladas):
 
 - Alta de vacantes, flujo de API, evaluaciones, seguimiento, entrevistas y bitácora.
 - Denegación de solicitudes API sin clave; verificación del hash administrativo.
@@ -154,7 +160,7 @@ Comando reproducible desde la raíz del repositorio:
 | E2E-04 | Comparación de ranking antes/después de reevaluar | Pruebas automatizadas disponibles; integración manual pendiente |
 | E2E-05 | Respuesta de Gemini/UltraMsg en entorno de prueba, si se dispone | **Opcional; integración real pendiente** |
 | E2E-06 | Capturas de registro, CV compartido, postulación, entrevista y avisos con dos cuentas ficticias | **Código y tests disponibles; validación manual sobre commit final** |
-| TA-01 | Captura del terminal con todas las pruebas aprobadas (28 en el corte histórico 3.8; actualizar para el commit final) | **Resultado histórico**; repetir y conservar evidencia del equipo local |
+| TA-01 | Captura de `pytest` y commit del código evaluado | **50 aprobadas, 0 fallidas, 2 advertencias (7-nov-2026, HEAD `c8db09a`)** en entorno local; falta adjuntar evidencia al repositorio y repetir en clon limpio |
 
 Para cada evidencia se recomienda documentar: fecha, commit, versión de Python, entorno (local/aislado), datos sintéticos utilizados, resultado esperado, resultado observado, errores y responsable que revisó.
 
@@ -168,7 +174,7 @@ Se considerará **aceptado** cuando:
 4. Exista trazabilidad con el PRD, README, commits y listado de limitaciones conocidas.
 5. El evaluador o responsable autorizado confirme que el **alcance administrador + candidato** es el alcance evaluado.
 
-**Estado de aceptación actual:** **pendiente**. Hay implementación y pruebas automatizadas, pero faltan evidencias manuales y validaciones externas. No se afirma un resultado académico o productivo definitivo.
+**Estado de aceptación actual:** **pendiente**. Las 50 pruebas automatizadas aprobaron en el entorno local, pero faltan evidencias manuales, una instalación limpia, datos de demostración reproducibles y verificaciones de integraciones externas. El modelo declarado `gemini-3.8-flash` **no ha sido demostrado aquí como un modelo que respondió efectivamente**; debe verificarse y dejar igual en `.env.example`, código y README. No se afirma un resultado académico o productivo definitivo.
 
 ## 8. Pendientes y fases posteriores
 

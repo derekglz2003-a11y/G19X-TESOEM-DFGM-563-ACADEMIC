@@ -1,17 +1,17 @@
 # PRD — CurriculAi
 
 **Nombre del producto:** CurriculAi — Optimizador de filtrado curricular mediante IA
-**Versión del documento:** 2.0 · actualización de alcance del portal de candidatos
-**Fecha de referencia:** 2 de noviembre de 2026 (la versión 3.5 se conserva como antecedente)
+**Versión del documento:** 2.1 · coherencia documental de la revisión 7
+**Fecha de referencia:** 7 de noviembre de 2026; versiones administrativas anteriores conservadas como antecedentes
 **Estado:** Propuesta para revisión académica y validación funcional, no aprobación de producción
 **Responsable:** Desarrollo del proyecto CurriculAi
 **Documento complementario:** [`MVP.md`](MVP.md)
 
-> **Alcance de este PRD:** especifica el producto, las funciones existentes y los compromisos de verificación propuestos. Se actualiza con los módulos del portal de candidatos de la rama `acceso-dos-roles`. No acredita por sí mismo la calidad del ranking con CV reales, el funcionamiento de servicios externos ni un despliegue de producción. No contiene información identificable de clientes, empresas receptoras o postulantes.
+> **Alcance de este PRD:** especifica el producto, las funciones existentes y los compromisos de verificación propuestos. Incluye el portal de candidatos en el alcance actual (integración indicada en la revisión 7). No acredita por sí mismo la calidad del ranking con CV reales, el funcionamiento de servicios externos ni un despliegue de producción. No contiene información identificable de clientes, empresas receptoras o postulantes.
 
 ## 1. Resumen ejecutivo
 
-CurriculAi es una aplicación de asistencia al reclutamiento que centraliza vacantes, expedientes curriculares, evaluaciones semánticas, entrevistas, decisiones de selección y registros de mensajes. El MVP administrativo original atiende a **un administrador de reclutamiento**; la rama `acceso-dos-roles` amplía el alcance con un **portal de candidatos**, donde pueden registrar una cuenta, crear o cargar su CV, compartirlo voluntariamente, consultar vacantes publicadas y seguir postulaciones y avisos. Ambos utilizan Streamlit, FastAPI y una base de datos configurada mediante variables de entorno.
+CurriculAi es una aplicación de asistencia al reclutamiento que centraliza vacantes, expedientes curriculares, evaluaciones semánticas, entrevistas, decisiones de selección y registros de mensajes. El MVP administrativo original atiende a **un administrador de reclutamiento**; el alcance vigente incorpora un **portal de candidatos**, donde pueden registrar una cuenta, crear o cargar su CV, compartirlo voluntariamente, consultar vacantes publicadas y seguir postulaciones y avisos. Ambos utilizan Streamlit, FastAPI y una base de datos configurada mediante variables de entorno.
 
 El motor inteligente compara el texto profesional de una vacante con **perfil, experiencia y habilidades** de los candidatos. Devuelve un porcentaje de **similitud textual orientativo**, una explicación y el número de expedientes excluidos por información insuficiente. **No determina por sí solo si una persona debe ser contratada.**
 
@@ -55,7 +55,7 @@ Las metas siguientes son **criterios para evaluar el MVP, no métricas de rendim
 | OBJ-02 | Asegurar una extracción controlada de documentos | Obtener texto laboral utilizable en **al menos 18 de 20** CV ficticios legibles de los formatos admitidos; registrar por separado casos de OCR | Dataset de prueba definido, revisión manual de texto extraído y registro de errores; **meta, no resultado** |
 | OBJ-03 | Mantener resultados explicables y evitar influencia directa de atributos protegidos | En **100 %** de las pruebas de insumo del motor, excluir campos administrativos explícitos (nombre, edad, sexo, teléfono, correo y CV íntegro) y presentar justificación/omitidos | Pruebas del módulo `servicios/perfil_laboral.py`, inspección del ranking y revisión humana |
 | OBJ-04 | Verificar controles de acceso | **100 %** de las rutas administrativas protegidas probadas sin clave válida deben denegar acceso y **0** secretos reales deben figurar en Git | Pruebas negativas de API, búsqueda de secretos y `git status` / `.gitignore` |
-| OBJ-05 | Demostrar reproducibilidad técnica | Una instalación limpia con instrucciones debe ejecutar el sistema y completar **la totalidad de las pruebas automatizadas del repositorio** (28 registradas en el corte histórico 3.8), o documentar las diferencias de entorno | Ejecución de `pytest`, evidencia del entorno, README e informe de instalación |
+| OBJ-05 | Demostrar reproducibilidad técnica | Una instalación limpia con instrucciones debe ejecutar el sistema y completar **la totalidad de las pruebas automatizadas del repositorio** (50 aprobadas en la ejecución local del 7-nov-2026; clon limpio aún pendiente), o documentar las diferencias de entorno | Ejecución de `pytest`, evidencia del entorno, README e informe de instalación |
 
 **Pendientes de medición:** tiempos reales de análisis, pertinencia de resultados, tasa de errores de OCR con Tesseract real, eficacia de las recomendaciones, latencia de servicios externos, seguridad en despliegue público y pruebas de sesgos. No deben presentarse como aprobados sin evidencia.
 
@@ -76,7 +76,7 @@ Las metas siguientes son **criterios para evaluar el MVP, no métricas de rendim
 11. Generación asistida de la descripción de una vacante únicamente si Gemini está configurado y responde.
 12. Configuración básica, reinicio de vista y cierre de sesión; tareas destructivas con confirmación.
 
-### 6.2 Portal del candidato incorporado a la rama `acceso-dos-roles`
+### 6.2 Portal del candidato incorporado al alcance actual
 
 1. Registro e inicio de sesión propios; perfil laboral privado.
 2. Generación manual de CV y carga de documento, con corrección posterior.
@@ -130,10 +130,10 @@ Las metas siguientes son **criterios para evaluar el MVP, no métricas de rendim
 | RNF-01 Seguridad | Denegar rutas administrativas sin `X-API-Key` válida y rutas privadas del portal sin sesión `Bearer` válida; evitar secretos en el repositorio | Pruebas negativas de API, revisión de `.env` y `.gitignore` | Protección básica implementada; no implica seguridad de producción |
 | RNF-02 Privacidad | Limitar campos usados por el embedding a perfil, experiencia y habilidades; no compartir CV reales en código o evidencias públicas | Pruebas unitarias, revisión del insumo y repositorio | Medida técnica implementada; anonimización total **no garantizada** |
 | RNF-03 Trazabilidad | Conservar estado por vacante y justificación de evaluaciones | Pruebas API y revisión en UI | Flujo funcional implementado; auditoría de modificaciones completa pendiente |
-| RNF-04 Reproducibilidad | Instalar desde el repositorio y ejecutar pruebas sin una conexión remota real | README, `.env.example` y base aislada | 28 pruebas automatizadas aprobadas en una base aislada durante el corte 3.8; falta repetir la instalación desde cero |
+| RNF-04 Reproducibilidad | Instalar desde el repositorio y ejecutar pruebas sin una conexión remota real | README, `.env.example` y base aislada | **50 pruebas aprobadas y 2 advertencias** en Windows local el 7-nov-2026 (HEAD `c8db09a`); **instalación limpia pendiente**. Las 28 pruebas del corte 3.8 son históricas |
 | RNF-05 Usabilidad | Buscar expedientes y vacantes sin recorrer listados extensos; menú usable en escritorio | Pruebas manuales a resolución definida y registro de incidencias | Búsqueda, selección y paginación implementadas; prueba formal de usabilidad pendiente |
 | RNF-06 Resiliencia | Explicar formatos inválidos y fallos de OCR / servicios externos sin fabricar resultados | Pruebas negativas y revisión de mensajes | Manejo parcial implementado; evaluación de errores de producción pendiente |
-| RNF-07 Portabilidad | Ejecutar en Windows con Python 3.11 recomendado, SQLite aislada o PostgreSQL mediante `DATABASE_URL` | Instalación documentada en máquina limpia | Documentado; instalación independiente por evaluar |
+| RNF-07 Portabilidad | Ejecutar en Windows con Python 3.11 recomendado y **SQLite como base de referencia de la entrega**; PostgreSQL/Supabase opcional mediante `DATABASE_URL` | Instalación documentada en máquina limpia | Configuración descrita; clon independiente por evaluar; base local efectiva del desarrollador no verificada |
 | RNF-08 Calidad de resultados | Alcanzar OBJ-02 y demostrar pertinencia de rankings en casos de prueba | Corpus ficticio con revisión humana | **Pendiente: no hay validación de precisión con datos reales** |
 | RNF-09 Rendimiento | Medir tiempo de carga y evaluación de 20 expedientes ficticios con modelo ya descargado | Cronometraje repetido, especificaciones de equipo y entorno | **Meta de medición futura; no se afirma tiempo** |
 | RNF-10 Conservación de datos | Definir y aprobar consentimiento/base de tratamiento, plazo de retención, acceso, respaldo y eliminación | Política documentada y casos de prueba | **Pendiente antes de uso real en producción** |
@@ -163,11 +163,11 @@ FastAPI (main.py)
          |
          v
 SQLAlchemy (database.py)
-         +--> SQLite local de desarrollo [por defecto]
-         +--> PostgreSQL / Supabase [cuando DATABASE_URL está configurada]
+         +--> SQLite local [referencia de la entrega: sqlite:///./motor_cv.db]
+         +--> PostgreSQL / Supabase [opcional, al cambiar DATABASE_URL]
 ```
 
-Las credenciales se leen de `.env` y **no** deben aparecer en GitHub ni documentos de entrega. La base local y la base remota son opciones de configuración, no bases que se deban sincronizar automáticamente.
+Las credenciales se leen de `.env` y **no** deben aparecer en GitHub ni documentos de entrega. Para una entrega reproducible se documenta **SQLite** (`DATABASE_URL=sqlite:///./motor_cv.db`, valor de referencia citado en la revisión). PostgreSQL/Supabase queda como **opción**. No se puede afirmar qué motor utiliza el `.env` privado del desarrollador sin inspeccionarlo localmente; la base local y remota no se sincronizan automáticamente.
 
 ## 10. Recorridos principales (historias de usuario)
 
@@ -200,7 +200,7 @@ Los casos de aceptación verificables para estas historias están en `MVP.md`.
 
 ## 12. Plan de validación y aceptación
 
-1. Ejecutar `python -m pytest -q tests` en un entorno aislado: **28 pruebas disponibles en el corte histórico 3.8**; el número vigente debe obtenerse de `pytest` en el commit final. Registrar salida, versión de Python y fecha de ejecución.
+1. Resultado vigente registrado en Windows local: `.\.venv\Scripts\python.exe -m pytest -q tests`, **50 aprobadas, 0 fallidas y 2 advertencias**, el **7-nov-2026**, HEAD local **`c8db09a`**. Volver a ejecutar el mismo comando en un **clon limpio** del commit entregado y anotar resultado, versión de Python, fecha y SHA. Las 28 pruebas administrativas del corte 3.8 son históricas.
 2. Ejecutar el recorrido manual E2E con una vacante y CV ficticios, **sin utilizar credenciales reales de postulantes**.
 3. Verificar autenticación, lectura prohibida sin clave, edición y eliminaciones solo en datos de prueba.
 4. Ejecutar un escenario con CV profesional válido, uno genérico, uno DOCX con tablas y uno `.doc` heredado; registrar resultado observado.
@@ -208,7 +208,9 @@ Los casos de aceptación verificables para estas historias están en `MVP.md`.
 6. Comprobar funciones opcionales (Gemini, UltraMsg, Supabase) **solo en un entorno autorizado y separado**, si se dispone de sus credenciales.
 7. Guardar evidencias: capturas sin datos personales, comando, resultado esperado/obtenido y referencia de commit.
 
-**Criterio de cierre del MVP:** aprobar todos los criterios **P0** descritos en `MVP.md` y documentar sin ocultar los casos fallidos. Las metas OBJ-01 a OBJ-05 deben tener resultado medido; hasta entonces su estado es **propuesto**.
+**Criterio de cierre del MVP:** aprobar todos los criterios **P0** descritos en `MVP.md` y documentar sin ocultar los casos fallidos. Las metas OBJ-01 a OBJ-05 deben tener resultado medido; hasta entonces su estado es **propuesto**. **Las 50 pruebas automatizadas no sustituyen** el clon limpio, el recorrido manual ni la verificación externa de Gemini, OCR o mensajería.
+
+**Trazabilidad de pruebas vigente (7-nov-2026):** 50 aprobadas, 0 fallidas, 2 advertencias; directorio local `C:\motorcv`, HEAD `c8db09a`. El árbol de trabajo mostró archivos sin seguimiento, por lo que **no se considera certificada la reproducibilidad desde ese SHA**. La versión actual del código declara `gemini-3.8-flash`, pero **no existe evidencia aquí de respuesta real con esa cuenta**: modelo efectivo por validar y alinear con `.env.example`, código y README.
 
 ## 13. Roadmap después del MVP
 

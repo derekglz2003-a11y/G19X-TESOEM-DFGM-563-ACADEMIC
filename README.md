@@ -7,21 +7,21 @@ Prototipo académico de reclutamiento con **dos vistas separadas**: administraci
 - Python 3.11 recomendado y las dependencias de `requirements.txt`.
 - Tesseract OCR instalado para reconocer texto en imágenes.
 - Conexión a Internet en la primera ejecución del modelo `all-MiniLM-L6-v2`, que puede tardar en descargarse.
-- SQLite para desarrollo o PostgreSQL cuando se configure `DATABASE_URL`.
+- **Base de datos de referencia para esta entrega reproducible: SQLite** (`DATABASE_URL=sqlite:///./motor_cv.db`, según `.env.example`). PostgreSQL/Supabase es una alternativa opcional que requiere configurar `DATABASE_URL` explícitamente. No se afirma que la base actualmente utilizada en la computadora del desarrollador sea SQLite: hay que comprobar su `.env` privado antes de las pruebas.
 
 ## Instalación en Windows / PowerShell
 
 Desde la **carpeta del repositorio** (sin usar una ruta fija):
 
 ```powershell
-python -m venv venv
-.\venv\Scripts\python.exe -m pip install -r requirements.txt
-.\venv\Scripts\python.exe scripts\configurar_acceso.py
+python -m venv .venv
+.\.venv\Scripts\python.exe -m pip install -r requirements.txt
+.\.venv\Scripts\python.exe scripts\configurar_acceso.py
 ```
 
-El asistente pedirá una contraseña de al menos 12 caracteres y creará/actualizará `.env` con una **derivación PBKDF2** y una **clave aleatoria para FastAPI**. Si ya tienes `.env`, conserva sus otras variables, incluida tu conexión a la base de datos y las integraciones opcionales. No subas `.env` a GitHub.
+El asistente pedirá una contraseña de al menos 12 caracteres y creará/actualizará `.env` con una **derivación PBKDF2** y una **clave aleatoria para FastAPI**. Si ya tienes `.env`, conserva sus otras variables, incluida tu conexión a la base de datos y las integraciones opcionales. Para una **instalación de entrega o prueba aislada**, comprueba que `DATABASE_URL` apunte a SQLite de prueba, **nunca** a una base remota que contenga datos reales. No subas `.env` a GitHub.
 
-`.env.example` contiene únicamente los nombres y valores públicos de ejemplo. Puedes copiarlo primero para establecer `DATABASE_URL` y `API_URL`, aunque el generador ya puede crear `.env` directamente.
+`.env.example` contiene únicamente nombres y valores de ejemplo. Para reproducir la entrega, utiliza `DATABASE_URL=sqlite:///./motor_cv.db` en el `.env` privado (según la configuración de referencia indicada en la revisión). Puedes copiar `.env.example` antes de ejecutar el generador, que conserva otras variables. PostgreSQL/Supabase es opcional, pero **no se necesita** para la instalación de referencia; tampoco se debe apuntar a una base remota real durante pruebas destructivas.
 
 **IMPORTANTE:** La nueva versión bloqueará el panel y las rutas de API si no ejecutas la configuración de acceso. Haz un respaldo de tu base de datos antes de actualizar.
 
@@ -30,13 +30,13 @@ El asistente pedirá una contraseña de al menos 12 caracteres y creará/actuali
 **Terminal 1 — Backend:**
 
 ```powershell
-.\venv\Scripts\python.exe -m uvicorn main:app --reload --port 8000
+.\.venv\Scripts\python.exe -m uvicorn main:app --reload --port 8000
 ```
 
 **Terminal 2 — Interfaz:**
 
 ```powershell
-.\venv\Scripts\python.exe -m streamlit run app.py --server.port 8501
+.\.venv\Scripts\python.exe -m streamlit run app.py --server.port 8501
 ```
 
 Entra a `http://localhost:8501`. Selecciona **Administrador** para entrar con la contraseña configurada, o **Candidato** para registrarte/iniciar sesión con tu cuenta propia. Ambos tienen cierre de sesión. Si cambias las credenciales de la API, **reinicia ambos procesos**.
@@ -54,7 +54,7 @@ Swagger administrativo puede abrirse en `http://localhost:8000/docs`. Las rutas 
 5. Agenda entrevistas, gestiona finalistas y registra la notificación WhatsApp si el proveedor está configurado.
 
 
-## Funciones del portal del candidato (rama `acceso-dos-roles`)
+## Funciones del portal del candidato
 
 - **Registro y acceso independientes** del administrador. La cuenta recién creada no se incorpora automáticamente al pool evaluable.
 - **Mi perfil y Mi CV:** completar información laboral, crear CV manualmente o cargar un archivo; descargar el CV elaborado en Word. El CV solo pasa al pool administrativo cuando la persona elige **Compartir mi CV**.
@@ -65,7 +65,7 @@ Swagger administrativo puede abrirse en `http://localhost:8000/docs`. Las rutas 
 
 **Regla de uso de IA:** el porcentaje del ranking es orientativo, no una probabilidad de contratación; solo el reclutador decide y el candidato no recibe el ranking interno de otros usuarios.
 
-**Validación:** las pruebas automáticas incluyen escenarios simulados de portal y notificaciones, pero **no sustituyen** la comprobación con OCR, Gemini, UltraMsg, permisos reales y una instalación limpia. Antes del merge, guarda evidencia de `pytest` en la rama y confirma que la base de pruebas es aislada.
+**Validación:** el portal forma parte del alcance ampliado descrito en `PRD.md` y `MVP.md`. Las pruebas automáticas incluyen escenarios simulados de portal y notificaciones, pero **no sustituyen** la comprobación con OCR, Gemini, UltraMsg, permisos reales y una instalación limpia. Antes de la entrega final, conserva evidencia de `pytest` y comprueba que la base de pruebas sea aislada.
 
 ## Seguridad: antecedente de la versión 3.4 y portal actual
 
@@ -100,21 +100,45 @@ extraídos, porque puede quedar información privada en texto libre.
 
 El porcentaje es una **similitud semántica orientativa**, no una probabilidad de contratación ni una decisión automática. La revisión humana es obligatoria. No deben usarse características personales protegidas para clasificar perfiles. Los resultados requieren validación de extracción y pertinencia. La generación de descripciones usa Gemini si existe una credencial `GEMINI_API_KEY` válida; el ranking semántico opera localmente.
 
-## Pruebas
+## Pruebas automatizadas y evidencia vigente
+
+Desde la raíz del repositorio, con las dependencias de `requirements.txt` instaladas:
 
 ```powershell
-.\venv\Scripts\python.exe -m pytest -q tests
+.\.venv\Scripts\python.exe -m pytest -q tests
 ```
 
-Las pruebas usan una **base temporal** y simulan el cálculo de embeddings; no son una medición de calidad del modelo semántico. Verifican además los permisos del backend. Antes de registrar el commit, comprueba que `git status` no incluya `.env`, CV ni bases de datos.
+**Resultado local informado el 7 de noviembre de 2026:** **50 pruebas aprobadas, 0 fallidas y 2 advertencias**; duración de la ejecución: **36.68 s**. **HEAD consultado después de la ejecución:** `c8db09a`. Salida observada:
 
-## Entorno reproducible y modelo Gemini (versión 3.8)
+```text
+50 passed, 2 warnings in 36.68s
+```
 
-- Las dependencias se declaran en `requirements.txt`, incluido `google-genai` (SDK actual utilizado por `servicios/gemini_ia.py`) y `pytest` para pruebas. No instalar `google-generativeai` como reemplazo del SDK nuevo.
-- `GEMINI_MODEL=gemini-3.8-flash` es el valor de ejemplo en `.env.example` y el valor predeterminado del servicio. Requiere `GEMINI_API_KEY` y acceso habilitado por Google para la cuenta. Si la cuenta no dispone del modelo, selecciona uno **realmente disponible en tu proyecto**, actualiza `.env` y reinicia FastAPI. No publiques tu clave.
-- El modelo de similitud (distinto a Gemini) se configura opcionalmente con `EMBEDDINGS_MODEL`; su primera descarga requiere conexión a Internet.
-- En el **corte histórico 3.8** se ejecutaron **28 pruebas** con SQLite aislado y simulaciones; **no es el conteo de la versión actual**. Para registrar el número vigente, ejecuta `python -m pytest -q tests` en el commit que se entregue y anota el resultado junto al SHA. La integración real con Supabase, Gemini y UltraMsg requiere pruebas separadas.
-- Cuando falle el endpoint de ranking, FastAPI devuelve `500` en lugar de simular que no hay candidatos; las pantallas Radar y Vacantes muestran ese error explícitamente.
+**Alcance de la evidencia:** el resultado corresponde al **directorio local `C:\motorcv`**, donde `git status --short` mostró archivos sin seguimiento. El SHA `c8db09a` identifica el HEAD consultado, **pero no garantiza por sí mismo que un clon de ese commit reproduzca el resultado**. Faltan el registro de instalación limpia, la comprobación de archivos entregados y la evidencia de la interfaz de extremo a extremo. Conservar la captura de la terminal sin información confidencial.
+
+Las pruebas usan bases temporales y simulaciones de embeddings, Gemini y parte del OCR; comprueban código y controles básicos de acceso, **no** la pertinencia del modelo ni el funcionamiento real de Supabase, Gemini, UltraMsg o Tesseract. Las **28 pruebas del corte administrativo 3.8 (26-oct-2026)** son un resultado **histórico**, no la cifra vigente. Antes del commit final revisa también que `git status` no incluya `.env`, CV reales ni bases de datos privadas.
+
+## Entorno reproducible y modelo Gemini
+
+- Las dependencias de pruebas **`pytest`**, **`httpx`** y **`PyMuPDF`** figuran en `requirements.txt` (comprobadas en la terminal el 7-nov-2026). El proyecto documenta `google-genai` como SDK de `servicios/gemini_ia.py`; no usar `google-generativeai` como sustituto sin adaptar el código.
+- El valor declarado en el código y en la documentación anterior es `GEMINI_MODEL=gemini-3.8-flash`. **No hay evidencia adjunta de que ese modelo haya respondido realmente con la cuenta del proyecto.** No debe presentarse como modelo validado. Para cerrar este punto: configurar una clave privada autorizada, generar una descripción, anotar **el identificador del modelo que sí respondió** y alinear `.env.example`, `MODELO_PREDETERMINADO` del servicio y este README; conservar una captura sin la clave. Si se cambia el valor, repetir `pytest`.
+- El modelo de similitud (distinto de Gemini) se configura con `EMBEDDINGS_MODEL`; su primera descarga requiere Internet.
+- Cuando falla el endpoint de ranking, la API debe comunicar el error en vez de simular una lista de cero candidatos; verificarlo de nuevo en la instalación limpia.
+
+## Datos de prueba y demostración reproducible (pendiente de completar)
+
+Para la evaluación final se debe agregar al repositorio un directorio `datos_prueba/` con al menos **tres CV íntegramente ficticios en formatos diferentes** (por ejemplo, TXT, DOCX y PNG) y un archivo `datos_prueba/vacantes_ejemplo.md` con vacantes ficticias. No se incluyen esos archivos en esta actualización de documentación y **aún no se considera completado este requisito**.
+
+Con esos materiales, la demostración será:
+
+1. Crear una instalación limpia con SQLite de prueba y configurar la contraseña administrativa mediante `scripts/configurar_acceso.py` (no publicarla).
+2. Iniciar FastAPI y Streamlit; seleccionar **Administrador** y crear/publicar una vacante ficticia.
+3. Cargar CV ficticios desde `datos_prueba/` y ejecutar el ranking. Interpretar los porcentajes como similitud orientativa.
+4. Seleccionar **Candidato**, registrarse con datos ficticios, crear/cargar un CV y elegir **Compartir mi CV**.
+5. Postularse a la vacante publicada; comprobar desde administración la postulación, crear una entrevista y revisar el aviso en la cuenta del candidato.
+6. Guardar los resultados, errores y capturas de la instalación aislada en `docs/cierre_mvp_2026-10-26/INSTALACION_LIMPIA.md` o en el registro de entrega correspondiente (archivo **pendiente de crear**).
+
+**No hay credenciales de demostración publicadas:** el administrador utiliza la contraseña definida localmente y cada candidato se registra con una contraseña ficticia de prueba. No incluir credenciales reales, CV reales ni archivos `.env` en Git.
 
 La evidencia histórica del MVP administrativo está en [`docs/cierre_mvp_2026-10-26/README.md`](docs/cierre_mvp_2026-10-26/README.md). Revisa que esa ruta exista en el commit final; el documento histórico no sustituye las pruebas de la versión con portal. Usa únicamente datos ficticios en las capturas.
 
