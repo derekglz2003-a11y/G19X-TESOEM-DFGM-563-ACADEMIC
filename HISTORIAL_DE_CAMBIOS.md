@@ -1,21 +1,22 @@
 # Historial de cambios — CurriculAi
 
-Este historial corresponde al **MVP de CurriculAi con dos accesos: administrador y candidato**. Se distinguen explícitamente las **versiones del producto**, los **resultados históricos** de pruebas y la **última comprobación local**. No se publican credenciales, datos reales de postulantes ni información confidencial. La aceptación final requiere una instalación limpia y pruebas manuales.
+Este historial corresponde al **MVP de CurriculAi con dos accesos: administrador y candidato**. Se distinguen las versiones del producto, los resultados históricos y la validación vigente en un clon independiente. No se publican credenciales, datos reales de postulantes ni información confidencial. Las pruebas reproducibles y el recorrido manual no suponen aprobación de producción.
 
-## Validación automatizada vigente — 7 de noviembre de 2026 (sin crear una versión nueva)
+## Validación automatizada vigente — 7 de noviembre de 2026
 
-- **Resultado en `C:\motorcv`: 50 pruebas aprobadas, 0 fallidas y 2 advertencias**, en **36.68 s**.
-- **HEAD local informado:** `c8db09a`; comando: `.\.venv\Scripts\python.exe -m pytest -q tests`.
-- El árbol local tenía **archivos sin seguimiento**. Este resultado **no demuestra todavía** que un clon del commit `c8db09a` ejecute correctamente todo el flujo; falta el registro de instalación limpia.
-- Las pruebas incluyen simulaciones de Gemini, embeddings y parte del OCR; la integración real con Gemini, UltraMsg, Tesseract y PostgreSQL/Supabase queda pendiente de verificación independiente.
-- **Resultado vigente de referencia para README, PRD, MVP e historial: 50 pruebas aprobadas.** Las cifras de 19, 25, 27 y 28 que aparecen más abajo son **históricas**, con sus cortes correspondientes.
+- **Commit `9f9bbc8`**, publicado en `main`: corrección del valor por defecto de `EMBEDDINGS_MODEL` en `embeddings.py`, declaración en `.env.example` y dos pruebas de regresión.
+- **Resultado en clon independiente `C:\prueba-limpia`, Python 3.11:** **52 pruebas aprobadas, 0 fallidas y 1 advertencia**, en **46.81 s**; SHA `9f9bbc8` confirmado con `git rev-parse --short HEAD`.
+- **Resultado en `C:\motorcv` tras corregir el modelo:** 52 pruebas aprobadas, 0 fallidas y 1 advertencia en 45.02 s.
+- **Recorrido manual observado:** aplicación iniciada con SQLite, vacante publicada, ranking real de 15 CV, postulación, notificaciones, entrevista y decisión final. Se documenta en [`INSTALACION_LIMPIA.md`](docs/cierre_mvp_2026-10-26/INSTALACION_LIMPIA.md), pendiente de incorporar al repositorio con este cambio documental.
+- **Commits documentales previos:** `fac9ce2` unificó los archivos y retiró `MEJORAS_3_5.md`; el corte anterior de 50 pruebas (HEAD `c8db09a`, 36.68 s con dos advertencias) es **histórico**. Las cifras de 19, 25, 27 y 28 también son **históricas**.
+- Las pruebas automatizadas simulan Gemini, embeddings y parte del OCR; no acreditan la integración real con Gemini, UltraMsg, Tesseract ni PostgreSQL/Supabase, y la demostración del ranking no constituye una evaluación de precisión.
 
 ## 4.0 — Portal del candidato (2 de noviembre de 2026)
 
 - Se incorpora al alcance actual el portal del candidato con registro, inicio de sesión propio y token `Bearer`; el acceso administrativo conserva sus controles por `X-API-Key`.
 - El candidato puede crear o subir su CV, modificar su expediente y **compartir explícitamente** su información con el área de reclutamiento.
 - Se incorporan vacantes publicadas, postulaciones, entrevistas asociadas y notificaciones privadas; los controles por usuario evitan mostrar avisos y postulaciones ajenos.
-- Se incluyen pruebas automatizadas del portal y del flujo candidato–reclutador. La comprobación manual de extremo a extremo en instalación limpia sigue pendiente.
+- Se incluyen pruebas automatizadas del portal y del flujo candidato–reclutador. El recorrido manual de vacante a finalista ya se observó en el clon; falta evaluar con dos cuentas el aislamiento y publicar evidencias anonimizadas.
 - **Commits señalados en la revisión 7:** `07b7fed` y `8b479c7`. **Verificar localmente con `git show` antes de dar por confirmada su relación exacta con esta versión.**
 
 ## 3.8 — Estabilidad y reproducibilidad (corte administrativo del 26 de octubre de 2026)
@@ -60,5 +61,5 @@ Este historial corresponde al **MVP de CurriculAi con dos accesos: administrador
 - **Dentro del alcance ampliado:** portal de candidatos, sesiones independientes, CV manual/cargado, compartición, postulaciones y notificaciones privadas.
 - **Fuera del alcance actual:** múltiples empresas y administradores con permisos distintos; múltiples entrevistas independientes por candidato, auditoría completa y despliegue público validado.
 - **Entrega reproducible de referencia:** SQLite (`DATABASE_URL=sqlite:///./motor_cv.db`). PostgreSQL/Supabase es una opción, no un requisito del clon limpio; la configuración privada que usa el desarrollador no se ha comprobado aquí.
-- **Pendientes de la revisión 7:** evidencia de instalación limpia, CV y vacantes ficticios en `datos_prueba/`, comprobación real del modelo Gemini y su configuración uniforme, además de retirar referencias y archivos de parches obsoletos del repositorio, después de confirmar que ya no sean necesarios.
+- **Pendientes de la revisión 7:** incorporar la bitácora de instalación limpia y evidencias depuradas al repositorio, agregar CV y vacantes totalmente ficticios a `datos_prueba/`, comprobar con cuenta autorizada qué modelo Gemini responde y completar la limpieza de parches obsoletos tras verificar que no se utilicen.
 - Toda prueba o captura debe usar datos ficticios y no incluir `.env`, bases de datos privadas ni credenciales.

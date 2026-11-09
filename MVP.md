@@ -3,7 +3,7 @@
 **Producto:** CurriculAi — Optimizador de filtrado curricular mediante IA
 **Versión del documento:** 2.1 · revisión 7 del alcance administrador + candidato
 **Fecha de referencia:** 7 de noviembre de 2026; antecedentes administrativos 3.8 conservados
-**Estado:** MVP administrador + candidato en el alcance actual; 50 pruebas locales aprobadas; aceptación manual, servicios externos y clon limpio pendientes
+**Estado:** MVP administrador + candidato en el alcance actual; **52 pruebas aprobadas en clon independiente**, demostración funcional observada; pendiente cierre formal de criterios, datos ficticios publicables e integraciones externas.
 **Documento de requisitos:** [`PRD.md`](PRD.md)
 
 ## 1. Qué entregamos como MVP
@@ -48,7 +48,7 @@ El **alcance actual incorpora el portal del candidato** con cuenta y sesión pro
 | CA-12 | Bitácora WhatsApp (P1) | **Dada** una acción de mensajería, **cuando** UltraMsg responde, **entonces** se registra estado y respuesta; sin credenciales no se informa falsamente un envío exitoso | Bitácora implementada; envío real externo no validado |
 | CA-13 | Descripción con Gemini (P1) | **Dado** un título de puesto y contexto, **cuando** se invoca IA configurada, **entonces** se propone un texto que el humano revisa; sin clave, la API informa indisponibilidad | Ruta implementada y caso sin clave probado; generación real pendiente |
 | CA-14 | Eliminación y confirmación (P0) | **Dado** un expediente o pool de prueba, **cuando** no hay confirmación o clave, **entonces** no debe efectuarse eliminación; con ambas y decisión del admin, se elimina según la operación | UI + API implementadas; validación destructiva solo en BD aislada |
-| CA-15 | Instalación y pruebas (P0) | **Dado** un clon del repositorio sin secretos, **cuando** se configuran dependencias y credenciales de prueba, **entonces** el sistema inicia y el comando de pruebas finaliza sin fallos | **50 pruebas aprobadas y 2 advertencias** en ejecución local del 7-nov-2026, HEAD `c8db09a`; **clon limpio sin validar** |
+| CA-15 | Instalación y pruebas (P0) | **Dado** un clon del repositorio sin secretos, **cuando** se configuran dependencias y credenciales de prueba, **entonces** el sistema inicia y el comando de pruebas finaliza sin fallos | **52 pruebas aprobadas y 1 advertencia**, 7-nov-2026, clon Windows/Python 3.11, commit `9f9bbc8`; FastAPI y Streamlit iniciados; ver `INSTALACION_LIMPIA.md` |
 | CA-16 | Registro y perfil candidato (P0 portal) | **Dado** un usuario registrado, **cuando** inicia sesión, **entonces** consulta y edita únicamente su expediente | `portal_auth.py`, `portal_expediente.py`; pruebas del portal; validación manual pendiente |
 | CA-17 | CV manual o cargado (P0 portal) | **Dado** un perfil laboral válido, **cuando** crea CV sin archivo o sube uno legible, **entonces** puede revisarlo y guardarlo | `test_cv_manual_portal.py`, pruebas de extracción |
 | CA-18 | Compartición explícita al ranking (P0 portal) | **Dado** un CV guardado, **cuando** autoriza compartirlo, **entonces** aparece una sola ficha en el pool; los cambios invalidan puntajes anteriores | `portal_oportunidades.py`, prueba E2E de compartición |
@@ -124,19 +124,19 @@ Usa una copia temporal del proyecto con una base **desechable**, dos o tres vaca
 
 ## 5. Evidencia automatizada vigente
 
-**Ejecución local del 7 de noviembre de 2026:** **50 pruebas aprobadas, 0 fallidas, 2 advertencias**, en **36.68 s**. HEAD local consultado: **`c8db09a`**. Resultado visible en la terminal:
+**Ejecución vigente en instalación limpia (7 de noviembre de 2026):** **52 pruebas aprobadas, 0 fallidas y 1 advertencia**, **46.81 s**, en `C:\prueba-limpia` con Python 3.11. **Commit de código verificado:** `9f9bbc8` (confirmado con `git rev-parse --short HEAD`).
 
 ```text
-50 passed, 2 warnings in 36.68s
+52 passed, 1 warning in 46.81s
 ```
 
-Comando ejecutado desde `C:\motorcv` (entorno virtual local `.venv`):
+Comando ejecutado desde la raíz del clon:
 
 ```powershell
 .\.venv\Scripts\python.exe -m pytest -q tests
 ```
 
-**Importante:** `git status --short` mostró archivos sin seguimiento; por tanto, el SHA `c8db09a` es la referencia de HEAD del equipo, **no prueba que un clon idéntico del repositorio produzca por sí solo el mismo resultado**. Se debe repetir la batería en una carpeta nueva sin copiar `.env`, `.venv` ni bases locales, y guardar el registro de instalación. La **cifra histórica del corte administrativo 3.8 fue 28 pruebas**; es antecedente y **no** sustituye las 50 pruebas vigentes.
+Se verificaron además el inicio de FastAPI/Streamlit, una vacante ficticia publicada, la evaluación semántica real sobre **15 CV**, una postulación, avisos, entrevista y decisión final. Se identificó y corrigió el error por variable `EMBEDDINGS_MODEL` vacía; el commit incorpora dos pruebas de regresión. Consultar la [`bitácora de instalación limpia`](docs/cierre_mvp_2026-10-26/INSTALACION_LIMPIA.md). La **cifra de 50 pruebas** (ejecuciones anteriores al commit de corrección) y las **28 pruebas del corte administrativo 3.8** son antecedentes, no resultados vigentes.
 
 Áreas cubiertas por las pruebas automatizadas (con partes simuladas):
 
@@ -154,13 +154,13 @@ Comando ejecutado desde `C:\motorcv` (entorno virtual local `.venv`):
 
 | ID | Evidencia esperada | Estado actual |
 |---|---|---|
-| E2E-01 | Captura del flujo vacante → finalista + registro de estados | **Pendiente de ejecución manual** |
+| E2E-01 | Captura del flujo vacante → finalista + registro de estados | **Recorrido manual observado en el clon:** vacante, postulación, entrevista y finalista aceptado; falta incorporar evidencia anonimizada |
 | E2E-02 | Salida de API denegando peticiones + comprobación Git | Pruebas automatizadas disponibles; verificación manual pendiente |
 | E2E-03 | Tabla de CV ficticios por formato, texto extraído, error si aplica | **Pendiente de medición manual** |
 | E2E-04 | Comparación de ranking antes/después de reevaluar | Pruebas automatizadas disponibles; integración manual pendiente |
 | E2E-05 | Respuesta de Gemini/UltraMsg en entorno de prueba, si se dispone | **Opcional; integración real pendiente** |
-| E2E-06 | Capturas de registro, CV compartido, postulación, entrevista y avisos con dos cuentas ficticias | **Código y tests disponibles; validación manual sobre commit final** |
-| TA-01 | Captura de `pytest` y commit del código evaluado | **50 aprobadas, 0 fallidas, 2 advertencias (7-nov-2026, HEAD `c8db09a`)** en entorno local; falta adjuntar evidencia al repositorio y repetir en clon limpio |
+| E2E-06 | Capturas de registro, CV compartido, postulación, entrevista y avisos con dos cuentas ficticias | **Flujo con una cuenta de candidato observado** y avisos recibidos; la comprobación manual de aislamiento entre **dos cuentas** sigue pendiente |
+| TA-01 | Captura de `pytest` y commit del código evaluado | **52 aprobadas, 0 fallidas, 1 advertencia (7-nov-2026, commit `9f9bbc8`)** en clon independiente; bitácora redactada, falta incorporarla y publicar evidencias depuradas |
 
 Para cada evidencia se recomienda documentar: fecha, commit, versión de Python, entorno (local/aislado), datos sintéticos utilizados, resultado esperado, resultado observado, errores y responsable que revisó.
 
@@ -174,7 +174,7 @@ Se considerará **aceptado** cuando:
 4. Exista trazabilidad con el PRD, README, commits y listado de limitaciones conocidas.
 5. El evaluador o responsable autorizado confirme que el **alcance administrador + candidato** es el alcance evaluado.
 
-**Estado de aceptación actual:** **pendiente**. Las 50 pruebas automatizadas aprobaron en el entorno local, pero faltan evidencias manuales, una instalación limpia, datos de demostración reproducibles y verificaciones de integraciones externas. El modelo declarado `gemini-3.8-flash` **no ha sido demostrado aquí como un modelo que respondió efectivamente**; debe verificarse y dejar igual en `.env.example`, código y README. No se afirma un resultado académico o productivo definitivo.
+**Estado de aceptación actual:** **pendiente de cierre formal**. Las **52 pruebas** aprobaron en clon independiente y se observó un recorrido manual completo de vacante a finalista; aún faltan publicar la bitácora y capturas anonimizadas, datos de demostración reproducibles, algunas comprobaciones manuales (como el aislamiento de dos cuentas) y las integraciones externas. El modelo declarado `gemini-3.8-flash` **no ha sido demostrado aquí como un modelo que respondió efectivamente**; debe verificarse y alinear `.env.example`, código y README. No se afirma un resultado académico o productivo definitivo.
 
 ## 8. Pendientes y fases posteriores
 

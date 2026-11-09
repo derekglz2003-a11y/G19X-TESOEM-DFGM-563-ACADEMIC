@@ -65,7 +65,7 @@ Swagger administrativo puede abrirse en `http://localhost:8000/docs`. Las rutas 
 
 **Regla de uso de IA:** el porcentaje del ranking es orientativo, no una probabilidad de contratación; solo el reclutador decide y el candidato no recibe el ranking interno de otros usuarios.
 
-**Validación:** el portal forma parte del alcance ampliado descrito en `PRD.md` y `MVP.md`. Las pruebas automáticas incluyen escenarios simulados de portal y notificaciones, pero **no sustituyen** la comprobación con OCR, Gemini, UltraMsg, permisos reales y una instalación limpia. Antes de la entrega final, conserva evidencia de `pytest` y comprueba que la base de pruebas sea aislada.
+**Validación:** el portal forma parte del alcance ampliado descrito en `PRD.md` y `MVP.md`. En el clon independiente `C:\prueba-limpia` se comprobaron el acceso del administrador y del candidato, una vacante publicada, la evaluación real de 15 CV, la postulación, los avisos, una entrevista y la decisión final. Las pruebas automáticas contienen simulaciones y **no sustituyen** la comprobación independiente de OCR real, Gemini, UltraMsg, seguridad de producción ni calidad del ranking. Véase [`INSTALACION_LIMPIA.md`](docs/cierre_mvp_2026-10-26/INSTALACION_LIMPIA.md).
 
 ## Seguridad: antecedente de la versión 3.4 y portal actual
 
@@ -108,22 +108,24 @@ Desde la raíz del repositorio, con las dependencias de `requirements.txt` insta
 .\.venv\Scripts\python.exe -m pytest -q tests
 ```
 
-**Resultado local informado el 7 de noviembre de 2026:** **50 pruebas aprobadas, 0 fallidas y 2 advertencias**; duración de la ejecución: **36.68 s**. **HEAD consultado después de la ejecución:** `c8db09a`. Salida observada:
+**Resultado vigente verificado el 7 de noviembre de 2026 en clon independiente:** **52 pruebas aprobadas, 0 fallidas y 1 advertencia** en **46.81 s**. **Commit del código verificado:** `9f9bbc8` (confirmado con `git rev-parse --short HEAD` en `C:\prueba-limpia`). Se clonó desde GitHub, se instaló un entorno virtual nuevo en Windows con Python 3.11 y se ejecutó `pytest`:
 
 ```text
-50 passed, 2 warnings in 36.68s
+52 passed, 1 warning in 46.81s
 ```
 
-**Alcance de la evidencia:** el resultado corresponde al **directorio local `C:\motorcv`**, donde `git status --short` mostró archivos sin seguimiento. El SHA `c8db09a` identifica el HEAD consultado, **pero no garantiza por sí mismo que un clon de ese commit reproduzca el resultado**. Faltan el registro de instalación limpia, la comprobación de archivos entregados y la evidencia de la interfaz de extremo a extremo. Conservar la captura de la terminal sin información confidencial.
+**Evidencia manual:** en la misma instalación de prueba se creó y publicó una vacante ficticia, se ejecutó el ranking semántico real sobre **15 CV**, se observó la postulación de una cuenta de candidato, las notificaciones, una entrevista y una decisión final. El error inicial provocado por `EMBEDDINGS_MODEL` vacía se corrigió en `embeddings.py` y `.env.example`; dos pruebas de regresión se añadieron al commit `9f9bbc8`. La bitácora completa está en [`docs/cierre_mvp_2026-10-26/INSTALACION_LIMPIA.md`](docs/cierre_mvp_2026-10-26/INSTALACION_LIMPIA.md). La publicación de esta bitácora y la adición de CV ficticios de ejemplo siguen siendo tareas pendientes hasta completar su commit.
 
-Las pruebas usan bases temporales y simulaciones de embeddings, Gemini y parte del OCR; comprueban código y controles básicos de acceso, **no** la pertinencia del modelo ni el funcionamiento real de Supabase, Gemini, UltraMsg o Tesseract. Las **28 pruebas del corte administrativo 3.8 (26-oct-2026)** son un resultado **histórico**, no la cifra vigente. Antes del commit final revisa también que `git status` no incluya `.env`, CV reales ni bases de datos privadas.
+**Historial de resultados:** antes de esa corrección se registraron **50 pruebas, 0 fallidas y 2 advertencias** (36.68 s) en `C:\motorcv`, HEAD `c8db09a`; y **50 pruebas, 1 advertencia** en un clon de `fac9ce2`. Son ejecuciones anteriores, **no el conteo vigente**.
+
+Las pruebas automatizadas usan bases temporales y simulaciones de embeddings, Gemini y parte del OCR; comprueban código y controles básicos de acceso, **no** la pertinencia del modelo ni el funcionamiento real de Supabase, Gemini, UltraMsg o Tesseract. El cálculo real del ranking sí se comprobó **por separado en la demostración manual**. Las **28 pruebas del corte administrativo 3.8 (26-oct-2026)** son un resultado histórico. Antes del commit final revisa también que `git status` no incluya `.env`, CV reales ni bases de datos privadas.
 
 ## Entorno reproducible y modelo Gemini
 
 - Las dependencias de pruebas **`pytest`**, **`httpx`** y **`PyMuPDF`** figuran en `requirements.txt` (comprobadas en la terminal el 7-nov-2026). El proyecto documenta `google-genai` como SDK de `servicios/gemini_ia.py`; no usar `google-generativeai` como sustituto sin adaptar el código.
 - El valor declarado en el código y en la documentación anterior es `GEMINI_MODEL=gemini-3.8-flash`. **No hay evidencia adjunta de que ese modelo haya respondido realmente con la cuenta del proyecto.** No debe presentarse como modelo validado. Para cerrar este punto: configurar una clave privada autorizada, generar una descripción, anotar **el identificador del modelo que sí respondió** y alinear `.env.example`, `MODELO_PREDETERMINADO` del servicio y este README; conservar una captura sin la clave. Si se cambia el valor, repetir `pytest`.
-- El modelo de similitud (distinto de Gemini) se configura con `EMBEDDINGS_MODEL`; su primera descarga requiere Internet.
-- Cuando falla el endpoint de ranking, la API debe comunicar el error en vez de simular una lista de cero candidatos; verificarlo de nuevo en la instalación limpia.
+- El modelo de similitud (distinto de Gemini) se configura con `EMBEDDINGS_MODEL=sentence-transformers/all-MiniLM-L6-v2` en `.env.example`. Desde `9f9bbc8`, `embeddings.py` también usa ese valor si la variable está vacía o ausente; su primera descarga requiere Internet.
+- Cuando falla el endpoint de ranking, la API comunica el error en vez de simular una lista de cero candidatos. Durante la prueba manual se detectó un HTTP 500 por una variable de modelo vacía; tras corregirla, el ranking real procesó 15 CV.
 
 ## Datos de prueba y demostración reproducible (pendiente de completar)
 
@@ -136,7 +138,7 @@ Con esos materiales, la demostración será:
 3. Cargar CV ficticios desde `datos_prueba/` y ejecutar el ranking. Interpretar los porcentajes como similitud orientativa.
 4. Seleccionar **Candidato**, registrarse con datos ficticios, crear/cargar un CV y elegir **Compartir mi CV**.
 5. Postularse a la vacante publicada; comprobar desde administración la postulación, crear una entrevista y revisar el aviso en la cuenta del candidato.
-6. Guardar los resultados, errores y capturas de la instalación aislada en `docs/cierre_mvp_2026-10-26/INSTALACION_LIMPIA.md` o en el registro de entrega correspondiente (archivo **pendiente de crear**).
+6. Consultar la bitácora ya redactada [`docs/cierre_mvp_2026-10-26/INSTALACION_LIMPIA.md`](docs/cierre_mvp_2026-10-26/INSTALACION_LIMPIA.md); incorporarla al repositorio con este paquete documental. Las capturas sólo deben publicarse después de anonimizar personas y datos.
 
 **No hay credenciales de demostración publicadas:** el administrador utiliza la contraseña definida localmente y cada candidato se registra con una contraseña ficticia de prueba. No incluir credenciales reales, CV reales ni archivos `.env` en Git.
 
