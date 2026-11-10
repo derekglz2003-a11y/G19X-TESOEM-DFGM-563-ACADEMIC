@@ -1,0 +1,23 @@
+CURRÍCULUM FICTICIO — SOLO PARA PRUEBAS DE CURRICULAI
+
+NOMBRE: Persona de Prueba A
+CORREO: cv.prueba01@example.com (correo de ejemplo, no pertenece a una persona real)
+PUESTO DESEADO: Auxiliar administrativo
+
+PERFIL PROFESIONAL
+Perfil administrativo de demostración con experiencia en captura de datos, organización de documentos, manejo de Excel y Word y elaboración de reportes.
+
+EXPERIENCIA FICTICIA
+Auxiliar de oficina, Organización de Prueba Alfa (simulada), 2024-2025.
+- Captura y actualización de registros en hojas de cálculo.
+- Archivo físico y digital de documentos.
+- Atención a solicitudes internas.
+- Elaboración de reportes semanales.
+
+FORMACIÓN FICTICIA
+Bachillerato concluido (institución simulada).
+
+HABILIDADES
+Microsoft Excel, Microsoft Word, organización documental, captura de información, comunicación, trabajo en equipo y atención al detalle.
+
+NOTA: El nombre, experiencia, institución y datos de contacto son enteramente ficticios.

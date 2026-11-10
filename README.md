@@ -11,10 +11,10 @@ Prototipo académico de reclutamiento con **dos vistas separadas**: administraci
 
 ## Instalación en Windows / PowerShell
 
-Desde la **carpeta del repositorio** (sin usar una ruta fija):
+Desde la **carpeta del repositorio** (sin usar una ruta fija), selecciona explícitamente **Python 3.11** en Windows. Comprueba las versiones disponibles con `py -0p` si es necesario; en una instalación anterior, `python` apuntaba a una versión diferente y creó un entorno virtual con estructura no compatible con los comandos de Windows:
 
 ```powershell
-python -m venv .venv
+py -3.11 -m venv .venv
 .\.venv\Scripts\python.exe -m pip install -r requirements.txt
 .\.venv\Scripts\python.exe scripts\configurar_acceso.py
 ```
@@ -114,7 +114,7 @@ Desde la raíz del repositorio, con las dependencias de `requirements.txt` insta
 52 passed, 1 warning in 46.81s
 ```
 
-**Evidencia manual:** en la misma instalación de prueba se creó y publicó una vacante ficticia, se ejecutó el ranking semántico real sobre **15 CV**, se observó la postulación de una cuenta de candidato, las notificaciones, una entrevista y una decisión final. El error inicial provocado por `EMBEDDINGS_MODEL` vacía se corrigió en `embeddings.py` y `.env.example`; dos pruebas de regresión se añadieron al commit `9f9bbc8`. La bitácora completa está en [`docs/cierre_mvp_2026-10-26/INSTALACION_LIMPIA.md`](docs/cierre_mvp_2026-10-26/INSTALACION_LIMPIA.md). La publicación de esta bitácora y la adición de CV ficticios de ejemplo siguen siendo tareas pendientes hasta completar su commit.
+**Evidencia manual:** en la misma instalación de prueba se creó y publicó una vacante ficticia, se ejecutó el ranking semántico real sobre **15 CV**, se observó la postulación de una cuenta de candidato, las notificaciones, una entrevista y una decisión final. El error inicial provocado por `EMBEDDINGS_MODEL` vacía se corrigió en `embeddings.py` y `.env.example`; dos pruebas de regresión se añadieron al commit `9f9bbc8`. La bitácora completa está en [`docs/cierre_mvp_2026-10-26/INSTALACION_LIMPIA.md`](docs/cierre_mvp_2026-10-26/INSTALACION_LIMPIA.md). La bitácora fue publicada en el commit `36eb2f9`. Los datos de demostración se describen abajo y se integran en un commit separado; no se consideran publicados hasta comprobarlos en GitHub.
 
 **Historial de resultados:** antes de esa corrección se registraron **50 pruebas, 0 fallidas y 2 advertencias** (36.68 s) en `C:\motorcv`, HEAD `c8db09a`; y **50 pruebas, 1 advertencia** en un clon de `fac9ce2`. Son ejecuciones anteriores, **no el conteo vigente**.
 
@@ -127,22 +127,38 @@ Las pruebas automatizadas usan bases temporales y simulaciones de embeddings, Ge
 - El modelo de similitud (distinto de Gemini) se configura con `EMBEDDINGS_MODEL=sentence-transformers/all-MiniLM-L6-v2` en `.env.example`. Desde `9f9bbc8`, `embeddings.py` también usa ese valor si la variable está vacía o ausente; su primera descarga requiere Internet.
 - Cuando falla el endpoint de ranking, la API comunica el error en vez de simular una lista de cero candidatos. Durante la prueba manual se detectó un HTTP 500 por una variable de modelo vacía; tras corregirla, el ranking real procesó 15 CV.
 
-## Datos de prueba y demostración reproducible (pendiente de completar)
+## Datos de prueba y demostración reproducible
 
-Para la evaluación final se debe agregar al repositorio un directorio `datos_prueba/` con al menos **tres CV íntegramente ficticios en formatos diferentes** (por ejemplo, TXT, DOCX y PNG) y un archivo `datos_prueba/vacantes_ejemplo.md` con vacantes ficticias. No se incluyen esos archivos en esta actualización de documentación y **aún no se considera completado este requisito**.
+La carpeta [`datos_prueba/`](datos_prueba/README.md) se preparó con **tres CV completamente ficticios**, en distintos formatos, y **dos vacantes de ejemplo**. Está destinada a la demostración de la entrega y debe incluirse junto con este README en el commit de datos de prueba; hasta verificar ese commit en GitHub no debe considerarse publicada.
 
-Con esos materiales, la demostración será:
+| Archivo | Uso en la demostración |
+|---|---|
+| [`CV_01_Auxiliar_Administrativo.txt`](datos_prueba/cv/CV_01_Auxiliar_Administrativo.txt) | Extracción de texto y ranking sobre una vacante administrativa. |
+| [`CV_02_Auxiliar_Contable.docx`](datos_prueba/cv/CV_02_Auxiliar_Contable.docx) | Lectura de Word y de información organizada en tablas. |
+| [`CV_03_Soporte_Tecnico_OCR.png`](datos_prueba/cv/CV_03_Soporte_Tecnico_OCR.png) | Prueba de OCR en imagen, **si se ha instalado y configurado Tesseract**. |
+| [`vacantes_ejemplo.md`](datos_prueba/vacantes_ejemplo.md) | Textos de dos vacantes para registrar manualmente en la interfaz. |
+| [`datos_prueba/README.md`](datos_prueba/README.md) | Procedimiento detallado y precauciones de demostración. |
 
-1. Crear una instalación limpia con SQLite de prueba y configurar la contraseña administrativa mediante `scripts/configurar_acceso.py` (no publicarla).
-2. Iniciar FastAPI y Streamlit; seleccionar **Administrador** y crear/publicar una vacante ficticia.
-3. Cargar CV ficticios desde `datos_prueba/` y ejecutar el ranking. Interpretar los porcentajes como similitud orientativa.
-4. Seleccionar **Candidato**, registrarse con datos ficticios, crear/cargar un CV y elegir **Compartir mi CV**.
-5. Postularse a la vacante publicada; comprobar desde administración la postulación, crear una entrevista y revisar el aviso en la cuenta del candidato.
-6. Consultar la bitácora ya redactada [`docs/cierre_mvp_2026-10-26/INSTALACION_LIMPIA.md`](docs/cierre_mvp_2026-10-26/INSTALACION_LIMPIA.md); incorporarla al repositorio con este paquete documental. Las capturas sólo deben publicarse después de anonimizar personas y datos.
+### Acceso a las dos vistas
 
-**No hay credenciales de demostración publicadas:** el administrador utiliza la contraseña definida localmente y cada candidato se registra con una contraseña ficticia de prueba. No incluir credenciales reales, CV reales ni archivos `.env` en Git.
+**Administrador:** en una instalación aislada, ejecuta `scripts/configurar_acceso.py` con Python del entorno virtual; elige una contraseña local de al menos 12 caracteres, inicia FastAPI y Streamlit como se indica arriba, selecciona «Administrador» e inicia sesión con la contraseña recién creada. **No existe una contraseña administrativa publicada ni se debe compartir el `.env`.**
 
-La evidencia histórica del MVP administrativo está en [`docs/cierre_mvp_2026-10-26/README.md`](docs/cierre_mvp_2026-10-26/README.md). Revisa que esa ruta exista en el commit final; el documento histórico no sustituye las pruebas de la versión con portal. Usa únicamente datos ficticios en las capturas.
+**Candidato:** en la pantalla inicial selecciona «Candidato» y «Registrarse». Usa únicamente datos sintéticos y una contraseña de prueba de al menos 12 caracteres; luego completa el perfil y crea o carga su CV. El CV pasa al pool administrativo cuando la persona lo comparte expresamente; postularse a una vacante es una acción separada.
+
+### Orden recomendado para demostrar el sistema
+
+1. Clonar el repositorio en una carpeta nueva y crear una **base SQLite de prueba**, nunca una base remota con datos reales.
+2. Instalar dependencias, configurar la contraseña administrativa y arrancar FastAPI y Streamlit en dos terminales.
+3. Entrar como **Administrador**, crear una de las vacantes de [`vacantes_ejemplo.md`](datos_prueba/vacantes_ejemplo.md) y publicarla.
+4. Cargar los CV TXT y DOCX desde **Candidatos** y, si Tesseract está disponible, probar también el PNG. Registrar cualquier error de extracción sin ocultarlo.
+5. Ejecutar el ranking desde **Vacantes** o **Radar de talentos**. Los porcentajes expresan similitud textual orientativa, no probabilidad de contratación.
+6. Cerrar sesión administrativa; entrar como **Candidato**, registrar una cuenta ficticia, crear o cargar un CV y seleccionar **Compartir mi CV**.
+7. Abrir la vacante publicada y postularse; regresar como administrador y comprobar la postulación, agendar una entrevista y registrar una decisión humana.
+8. Volver a la cuenta de candidato y comprobar sus avisos y seguimiento. Para probar el aislamiento, utilizar una **segunda cuenta ficticia** y verificar que no pueda consultar avisos ajenos.
+
+**Evidencia anterior:** la instalación limpia, el cálculo semántico con 15 CV y el recorrido de postulación a finalista quedaron documentados en [`INSTALACION_LIMPIA.md`](docs/cierre_mvp_2026-10-26/INSTALACION_LIMPIA.md), publicado en `36eb2f9`. Esos resultados corresponden a los datos y al entorno utilizados entonces; **la nueva carpeta `datos_prueba/` todavía requiere su propia comprobación después de publicarse**.
+
+**Privacidad:** no publicar `.env`, contraseñas, claves API, CV reales, bases SQLite ni capturas con datos personales. La prueba de Gemini real es **independiente y sigue pendiente de acreditación**. La documentación histórica del MVP administrativo está en [`docs/cierre_mvp_2026-10-26/README.md`](docs/cierre_mvp_2026-10-26/README.md).
 
 ## Uso de IA en el desarrollo
 
